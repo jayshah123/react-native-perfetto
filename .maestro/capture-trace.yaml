@@ -1,0 +1,18 @@
+appId: perfetto.example
+---
+- launchApp
+- assertVisible: "react-native-perfetto"
+- assertVisible: "Perfetto SDK bundled: yes"
+- tapOn:
+    id: "runWithRecordingDemoButton"
+- extendedWaitUntil:
+    visible: "Status: withRecording helper completed"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: "traceCapturedText"
+    timeout: 30000
+- assertVisible: "Trace captured: yes"
+- assertVisible: "Trace path available: yes"
+- assertVisible:
+    id: "tracePathText"

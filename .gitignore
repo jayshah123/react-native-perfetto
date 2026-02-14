@@ -84,3 +84,10 @@ android/generated
 
 # React Native Nitro Modules
 nitrogen/
+
+# Local generated artifacts (testing/automation)
+.playwright-cli/
+output/
+example/ios/PerfettoExample.xcworkspace/
+example/ios/Podfile.lock
+example/Gemfile.lock

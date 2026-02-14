@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "description": "React Native Perfetto tracing and recording library",
   "main": "./lib/module/index.js",
+  "react-native": "./src/index.tsx",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
     ".": {
       "source": "./src/index.tsx",
+      "react-native": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
@@ -15,6 +17,8 @@
   "files": [
     "src",
     "lib",
+    "scripts",
+    ".maestro",
     "android",
     "ios",
     "cpp",
@@ -34,14 +38,30 @@
   "scripts": {
     "example": "yarn workspace react-native-perfetto-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
+    "build": "bob build",
     "prepare": "bob build",
+    "vendor:perfetto-sdk": "./scripts/vendor-perfetto-sdk.sh",
+    "maestro:install": "./scripts/install-maestro.sh",
+    "maestro:test:capture-trace": "./scripts/run-maestro.sh test .maestro/capture-trace.yaml",
+    "maestro:test:capture-busy-loop-1s": "./scripts/run-maestro.sh test .maestro/capture-busy-loop-1s.yaml",
+    "trace:pull:android": "./scripts/pull-latest-android-trace.sh",
+    "trace:pull:ios": "./scripts/pull-latest-ios-trace.sh",
+    "playwright:test:verify-trace": "node ./scripts/verify-trace-playwright.mjs",
+    "playwright:test:verify-busy-loop-1s": "node ./scripts/verify-trace-playwright.mjs --event busy-loop-1s --min-dur-ms 900 --max-dur-ms 1500",
+    "maestro:test:capture-and-verify-trace": "yarn maestro:test:capture-trace && yarn trace:pull:android && yarn playwright:test:verify-trace -- --headed",
+    "maestro:test:capture-and-verify-busy-loop-1s": "yarn maestro:test:capture-busy-loop-1s && yarn trace:pull:android && yarn playwright:test:verify-busy-loop-1s -- --headed",
+    "maestro:test:capture-and-verify-busy-loop-1s:ios": "MAESTRO_PLATFORM=ios yarn maestro:test:capture-busy-loop-1s && yarn trace:pull:ios && yarn playwright:test:verify-busy-loop-1s -- --headed",
+    "maestro:test": "yarn maestro:test:capture-trace",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\""
   },
   "keywords": [
     "react-native",
     "ios",
-    "android"
+    "android",
+    "perfetto",
+    "tracing",
+    "performance"
   ],
   "repository": {
     "type": "git",
@@ -67,6 +87,7 @@
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
+    "playwright": "^1.58.2",
     "prettier": "^2.8.8",
     "react": "19.2.0",
     "react-native": "0.83.0",
