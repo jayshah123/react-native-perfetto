@@ -309,6 +309,14 @@ yarn lint
 yarn prepare
 ```
 
+## API Documentation
+
+- Cross-layer overview (TS -> Android -> C++): `docs/public-api-overview.md`
+- TypeScript public API: `docs/ts-api.md`
+- Android TurboModule + JNI API: `docs/android-api.md`
+- C++ module public API: `docs/cpp-public-api.md`
+- Direct native C API plan: `docs/direct-cpp-api-exposure-plan.md`
+
 ## References
 
 - React Native Turbo Native Modules: <https://reactnative.dev/docs/turbo-native-modules-introduction>
