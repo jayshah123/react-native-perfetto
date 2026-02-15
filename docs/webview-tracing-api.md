@@ -4,6 +4,8 @@ Source of truth: `src/index.tsx` (`createWebViewTraceBridge`)
 
 This API lets JS running inside a `react-native-webview` page emit trace sections/events/counters into the same active RN trace session.
 
+Wire protocol reference (shared with non-RN hosts): `docs/webview-wire-protocol.md`.
+
 ## Goal
 
 - Keep the public app-facing API session-first.
@@ -157,3 +159,13 @@ try {
 - `js-relay` avoids extra app-level protocol code by giving an in-page high-level API and a compact bridge format.
 - It still passes through WebView message transport and RN JS event handling.
 - Future `native-direct` mode is the upgrade path for lower bridge latency.
+
+## Non-RN Reuse
+
+If you are not using `react-native-webview`, you can still reuse the same protocol parser and operation schema:
+
+- `parseWebViewTracePayload(...)`
+- `WebViewWireOperation`
+- `WEBVIEW_TRACE_PROTOCOL_VERSION`
+
+Then adapt incoming WebView messages in your host runtime and dispatch parsed operations to your tracer backend.

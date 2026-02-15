@@ -1,4 +1,20 @@
 import NativePerfetto from './NativePerfetto';
+import {
+  DEFAULT_WEBVIEW_TRACE_MAX_PAYLOAD_BYTES,
+  WEBVIEW_TRACE_PROTOCOL_VERSION,
+  parseWebViewTracePayload,
+  type ParseWebViewTracePayloadFailureReason,
+} from './webviewWireProtocol';
+
+export {
+  DEFAULT_WEBVIEW_TRACE_MAX_PAYLOAD_BYTES,
+  WEBVIEW_TRACE_PROTOCOL_VERSION,
+  parseWebViewTracePayload,
+  type WebViewWireOperation,
+  type ParseWebViewTracePayloadFailureReason,
+  type ParseWebViewTracePayloadOptions,
+  type ParseWebViewTracePayloadResult,
+} from './webviewWireProtocol';
 
 export type TraceBackend = 'in-process' | 'system';
 export type TraceArg = string | number | boolean | null;
@@ -83,8 +99,8 @@ const DEFAULT_BACKEND: TraceBackend = 'in-process';
 const DEFAULT_CATEGORY = 'react-native';
 const DEFAULT_WEBVIEW_SOURCE_ID = 'webview';
 const DEFAULT_WEBVIEW_CATEGORY = 'react-native.webview';
-const DEFAULT_WEBVIEW_MAX_PAYLOAD_BYTES = 64 * 1024;
-const WEBVIEW_TRACE_PROTOCOL_VERSION = 1;
+const DEFAULT_WEBVIEW_MAX_PAYLOAD_BYTES =
+  DEFAULT_WEBVIEW_TRACE_MAX_PAYLOAD_BYTES;
 
 let activeDefaultSession: TraceSessionImpl | null = null;
 let nextSessionId = 1;
@@ -301,45 +317,6 @@ function normalizeStopError(error: unknown): TraceError {
   return traceError;
 }
 
-type WebViewWireOperation =
-  | {
-      t: 'r';
-      v: number;
-      s: string;
-    }
-  | {
-      t: 'b';
-      v: number;
-      s: string;
-      i: number;
-      n: string;
-      c?: string;
-      a?: Record<string, unknown>;
-    }
-  | {
-      t: 'e';
-      v: number;
-      s: string;
-      i: number;
-    }
-  | {
-      t: 'i';
-      v: number;
-      s: string;
-      n: string;
-      c?: string;
-      a?: Record<string, unknown>;
-    }
-  | {
-      t: 'k';
-      v: number;
-      s: string;
-      n: string;
-      c?: string;
-      a?: Record<string, unknown>;
-      x: number;
-    };
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -404,94 +381,14 @@ function extractWebViewMessageData(event: WebViewTraceMessageEvent): unknown {
   return undefined;
 }
 
-function toWebViewWireOperation(value: unknown): WebViewWireOperation | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  if (value.v !== WEBVIEW_TRACE_PROTOCOL_VERSION) {
-    return null;
-  }
-
-  if (typeof value.s !== 'string' || value.s.trim().length === 0) {
-    return null;
-  }
-
-  if (value.t === 'r') {
-    return {
-      t: 'r',
-      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
-      s: value.s,
-    };
-  }
-
-  if (value.t === 'b') {
-    if (typeof value.i !== 'number' || !Number.isFinite(value.i)) {
-      return null;
-    }
-    if (typeof value.n !== 'string') {
-      return null;
-    }
-
-    return {
-      t: 'b',
-      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
-      s: value.s,
-      i: Math.floor(value.i),
-      n: value.n,
-      c: typeof value.c === 'string' ? value.c : undefined,
-      a: isRecord(value.a) ? value.a : undefined,
-    };
-  }
-
-  if (value.t === 'e') {
-    if (typeof value.i !== 'number' || !Number.isFinite(value.i)) {
-      return null;
-    }
-
-    return {
-      t: 'e',
-      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
-      s: value.s,
-      i: Math.floor(value.i),
-    };
-  }
-
-  if (value.t === 'i') {
-    if (typeof value.n !== 'string') {
-      return null;
-    }
-
-    return {
-      t: 'i',
-      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
-      s: value.s,
-      n: value.n,
-      c: typeof value.c === 'string' ? value.c : undefined,
-      a: isRecord(value.a) ? value.a : undefined,
-    };
-  }
-
-  if (value.t === 'k') {
-    if (typeof value.n !== 'string') {
-      return null;
-    }
-    if (typeof value.x !== 'number' || !Number.isFinite(value.x)) {
-      return null;
-    }
-
-    return {
-      t: 'k',
-      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
-      s: value.s,
-      n: value.n,
-      c: typeof value.c === 'string' ? value.c : undefined,
-      a: isRecord(value.a) ? value.a : undefined,
-      x: value.x,
-    };
-  }
-
-  return null;
+function shouldWarnForWebViewParseFailure(
+  reason: ParseWebViewTracePayloadFailureReason
+): boolean {
+  return (
+    reason === 'empty-payload' ||
+    reason === 'payload-too-large' ||
+    reason === 'invalid-json'
+  );
 }
 
 function buildWebViewBridgeBootstrapScript(config: {
@@ -987,39 +884,27 @@ export function createWebViewTraceBridge(
 
   const processMessage = (event: WebViewTraceMessageEvent): void => {
     const rawData = extractWebViewMessageData(event);
-    if (typeof rawData !== 'string') {
+    const parsed = parseWebViewTracePayload(rawData, {
+      channelPrefix,
+      maxPayloadBytes,
+      expectedSourceId: sourceId,
+    });
+    if (!parsed.ok) {
+      if (shouldWarnForWebViewParseFailure(parsed.reason)) {
+        if (parsed.reason === 'invalid-json') {
+          warnDev(
+            '[react-native-perfetto] Dropping malformed WebView trace message.',
+            parsed.error
+          );
+        } else {
+          warnDev(
+            '[react-native-perfetto] Dropping WebView trace message due to empty/oversized payload.'
+          );
+        }
+      }
       return;
     }
-    if (!rawData.startsWith(channelPrefix)) {
-      return;
-    }
-
-    const payload = rawData.slice(channelPrefix.length);
-    if (payload.length === 0 || payload.length > maxPayloadBytes) {
-      warnDev(
-        '[react-native-perfetto] Dropping WebView trace message due to empty/oversized payload.'
-      );
-      return;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(payload);
-    } catch (error) {
-      warnDev(
-        '[react-native-perfetto] Dropping malformed WebView trace message.',
-        error
-      );
-      return;
-    }
-
-    const operation = toWebViewWireOperation(parsed);
-    if (!operation) {
-      return;
-    }
-    if (operation.s !== sourceId) {
-      return;
-    }
+    const operation = parsed.operation;
 
     if (operation.t === 'r') {
       closeOpenSections();

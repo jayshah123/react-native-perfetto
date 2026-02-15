@@ -97,6 +97,23 @@ Options:
 - `mode?`: currently supports `'js-relay'`. `'native-direct'` throws `ERR_WEBVIEW_MODE_UNSUPPORTED`.
 - `maxPayloadBytes?`: upper bound for single WebView message payload.
 
+### `parseWebViewTracePayload(rawData, options)`
+
+- Host-agnostic parser for WebView trace messages.
+- Validates prefix, payload size, JSON, schema, protocol version, and optional source id.
+- Returns:
+  - `{ ok: true, operation, payload }`
+  - `{ ok: false, reason, payload?, error? }`
+
+Related exports:
+
+- `WEBVIEW_TRACE_PROTOCOL_VERSION`
+- `DEFAULT_WEBVIEW_TRACE_MAX_PAYLOAD_BYTES`
+- `WebViewWireOperation`
+- `ParseWebViewTracePayloadOptions`
+- `ParseWebViewTracePayloadResult`
+- `ParseWebViewTracePayloadFailureReason`
+
 ## `TraceSession` Methods
 
 ### `isActive()`

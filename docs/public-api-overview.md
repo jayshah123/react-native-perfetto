@@ -27,6 +27,7 @@ This document maps those layers so contracts stay aligned.
 - Product-facing API: TypeScript session-first API from `src/index.tsx`.
 - Android bridge API: implementation contract for React Native codegen + JNI.
 - C++ class API: shared core used by platform bridges; ABI is best-effort.
+- WebView wire protocol parser: `src/webviewWireProtocol.ts` for host-agnostic message validation.
 
 Planned stable native surface for external host apps/libraries is C ABI based:
 - `docs/direct-cpp-api-exposure-plan.md`
@@ -56,3 +57,4 @@ See:
 - `docs/android-api.md`
 - `docs/cpp-public-api.md`
 - `docs/webview-tracing-api.md`
+- `docs/webview-wire-protocol.md`

@@ -176,6 +176,10 @@ window.ReactNativePerfetto.withSection('checkout-render', () => {
 });
 ```
 
+Host-agnostic protocol details and parser contract:
+
+- `docs/webview-wire-protocol.md`
+
 ## Compatibility wrappers (deprecated)
 
 The previous global API is still available as thin wrappers and emits a dev-only deprecation warning:
@@ -345,6 +349,7 @@ yarn prepare
 - Android TurboModule + JNI API: `docs/android-api.md`
 - C++ module public API: `docs/cpp-public-api.md`
 - WebView tracing API: `docs/webview-tracing-api.md`
+- WebView wire protocol: `docs/webview-wire-protocol.md`
 - Direct native C API plan: `docs/direct-cpp-api-exposure-plan.md`
 
 ## References
