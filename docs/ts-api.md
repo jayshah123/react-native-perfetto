@@ -74,6 +74,29 @@ interface TraceSession {
 
 - Calls `session.section(...)`, runs `fn`, then always calls `section.end()` in `finally`.
 
+### `createWebViewTraceBridge(options?)`
+
+- Creates a dedicated bridge for `react-native-webview`.
+- Returns:
+  - `injectedJavaScriptBeforeContentLoaded`
+  - `injectedJavaScript`
+  - `onMessage(event)` relay handler
+  - `getWebViewProps()`
+  - `dispose()`
+- In-page script exposes `window.ReactNativePerfetto` with:
+  - `section`
+  - `event`
+  - `counter`
+  - `withSection`
+
+Options:
+
+- `session?`: explicit target `TraceSession` (falls back to active default session if omitted).
+- `sourceId?`: source identifier for this bridge.
+- `defaultCategory?`: fallback category when page calls omit category.
+- `mode?`: currently supports `'js-relay'`. `'native-direct'` throws `ERR_WEBVIEW_MODE_UNSUPPORTED`.
+- `maxPayloadBytes?`: upper bound for single WebView message payload.
+
 ## `TraceSession` Methods
 
 ### `isActive()`
@@ -112,6 +135,7 @@ Main exported semantic error codes:
 - `ERR_NO_ACTIVE_SESSION`
 - `ERR_RECORDING_START_FAILED`
 - `ERR_RECORDING_STOP_FAILED`
+- `ERR_WEBVIEW_MODE_UNSUPPORTED`
 
 Native-layer codes are normalized into the above where possible.
 

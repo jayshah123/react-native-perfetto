@@ -46,12 +46,49 @@ export interface TraceSession {
   counter(name: string, value: number, options?: CounterOptions): void;
 }
 
+export type WebViewTraceBridgeMode = 'js-relay' | 'native-direct';
+
+export interface WebViewTraceBridgeOptions {
+  session?: TraceSession;
+  sourceId?: string;
+  defaultCategory?: string;
+  mode?: WebViewTraceBridgeMode;
+  maxPayloadBytes?: number;
+}
+
+export interface WebViewTraceMessageEvent {
+  nativeEvent?: {
+    data?: unknown;
+  };
+}
+
+export interface WebViewTraceBridgeProps {
+  injectedJavaScriptBeforeContentLoaded: string;
+  injectedJavaScript: string;
+  onMessage: (event: WebViewTraceMessageEvent) => void;
+}
+
+export interface WebViewTraceBridge {
+  readonly mode: WebViewTraceBridgeMode;
+  readonly sourceId: string;
+  readonly injectedJavaScriptBeforeContentLoaded: string;
+  readonly injectedJavaScript: string;
+  onMessage(event: WebViewTraceMessageEvent): void;
+  getWebViewProps(): WebViewTraceBridgeProps;
+  dispose(): void;
+}
+
 const DEFAULT_BUFFER_SIZE_KB = 4 * 1024;
 const DEFAULT_BACKEND: TraceBackend = 'in-process';
 const DEFAULT_CATEGORY = 'react-native';
+const DEFAULT_WEBVIEW_SOURCE_ID = 'webview';
+const DEFAULT_WEBVIEW_CATEGORY = 'react-native.webview';
+const DEFAULT_WEBVIEW_MAX_PAYLOAD_BYTES = 64 * 1024;
+const WEBVIEW_TRACE_PROTOCOL_VERSION = 1;
 
 let activeDefaultSession: TraceSessionImpl | null = null;
 let nextSessionId = 1;
+let nextWebViewBridgeId = 1;
 
 const deprecatedWarnings = new Set<string>();
 const legacySectionStack: TraceSection[] = [];
@@ -262,6 +299,373 @@ function normalizeStopError(error: unknown): TraceError {
   }
 
   return traceError;
+}
+
+type WebViewWireOperation =
+  | {
+      t: 'r';
+      v: number;
+      s: string;
+    }
+  | {
+      t: 'b';
+      v: number;
+      s: string;
+      i: number;
+      n: string;
+      c?: string;
+      a?: Record<string, unknown>;
+    }
+  | {
+      t: 'e';
+      v: number;
+      s: string;
+      i: number;
+    }
+  | {
+      t: 'i';
+      v: number;
+      s: string;
+      n: string;
+      c?: string;
+      a?: Record<string, unknown>;
+    }
+  | {
+      t: 'k';
+      v: number;
+      s: string;
+      n: string;
+      c?: string;
+      a?: Record<string, unknown>;
+      x: number;
+    };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeWebViewSourceId(sourceId?: string): string {
+  if (typeof sourceId !== 'string') {
+    return DEFAULT_WEBVIEW_SOURCE_ID;
+  }
+
+  const trimmed = sourceId.trim();
+  if (!trimmed) {
+    return DEFAULT_WEBVIEW_SOURCE_ID;
+  }
+
+  return trimmed.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+function resolveWebViewSession(
+  explicitSession?: TraceSession
+): TraceSession | null {
+  if (explicitSession && explicitSession.isActive()) {
+    return explicitSession;
+  }
+
+  if (activeDefaultSession && activeDefaultSession.isActive()) {
+    return activeDefaultSession;
+  }
+
+  return null;
+}
+
+function coerceTraceArgs(value: unknown): TraceArgs | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const normalized: TraceArgs = {};
+  for (const [key, arg] of Object.entries(value)) {
+    const trimmedKey = key.trim();
+    if (!trimmedKey) {
+      continue;
+    }
+
+    if (arg === null || typeof arg === 'string' || typeof arg === 'boolean') {
+      normalized[trimmedKey] = arg;
+      continue;
+    }
+
+    if (typeof arg === 'number' && Number.isFinite(arg)) {
+      normalized[trimmedKey] = arg;
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function extractWebViewMessageData(event: WebViewTraceMessageEvent): unknown {
+  if (event && typeof event === 'object' && 'nativeEvent' in event) {
+    return event.nativeEvent?.data;
+  }
+
+  return undefined;
+}
+
+function toWebViewWireOperation(value: unknown): WebViewWireOperation | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value.v !== WEBVIEW_TRACE_PROTOCOL_VERSION) {
+    return null;
+  }
+
+  if (typeof value.s !== 'string' || value.s.trim().length === 0) {
+    return null;
+  }
+
+  if (value.t === 'r') {
+    return {
+      t: 'r',
+      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
+      s: value.s,
+    };
+  }
+
+  if (value.t === 'b') {
+    if (typeof value.i !== 'number' || !Number.isFinite(value.i)) {
+      return null;
+    }
+    if (typeof value.n !== 'string') {
+      return null;
+    }
+
+    return {
+      t: 'b',
+      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
+      s: value.s,
+      i: Math.floor(value.i),
+      n: value.n,
+      c: typeof value.c === 'string' ? value.c : undefined,
+      a: isRecord(value.a) ? value.a : undefined,
+    };
+  }
+
+  if (value.t === 'e') {
+    if (typeof value.i !== 'number' || !Number.isFinite(value.i)) {
+      return null;
+    }
+
+    return {
+      t: 'e',
+      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
+      s: value.s,
+      i: Math.floor(value.i),
+    };
+  }
+
+  if (value.t === 'i') {
+    if (typeof value.n !== 'string') {
+      return null;
+    }
+
+    return {
+      t: 'i',
+      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
+      s: value.s,
+      n: value.n,
+      c: typeof value.c === 'string' ? value.c : undefined,
+      a: isRecord(value.a) ? value.a : undefined,
+    };
+  }
+
+  if (value.t === 'k') {
+    if (typeof value.n !== 'string') {
+      return null;
+    }
+    if (typeof value.x !== 'number' || !Number.isFinite(value.x)) {
+      return null;
+    }
+
+    return {
+      t: 'k',
+      v: WEBVIEW_TRACE_PROTOCOL_VERSION,
+      s: value.s,
+      n: value.n,
+      c: typeof value.c === 'string' ? value.c : undefined,
+      a: isRecord(value.a) ? value.a : undefined,
+      x: value.x,
+    };
+  }
+
+  return null;
+}
+
+function buildWebViewBridgeBootstrapScript(config: {
+  channelPrefix: string;
+  sourceId: string;
+  defaultCategory: string;
+}): string {
+  const serializedConfig = JSON.stringify(config);
+
+  return `
+(function(config) {
+  if (typeof window !== 'object' || window === null) {
+    return;
+  }
+
+  var globalObj = window;
+  var installKey = '__rnPerfettoWebViewInstalled__' + config.channelPrefix;
+  if (globalObj[installKey]) {
+    return;
+  }
+  globalObj[installKey] = true;
+
+  var channelPrefix = config.channelPrefix;
+  var sourceId = config.sourceId;
+  var defaultCategory = config.defaultCategory;
+  var nextSectionId = 1;
+
+  function normalizeName(value, fallback) {
+    if (typeof value !== 'string') {
+      return fallback;
+    }
+    var trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : fallback;
+  }
+
+  function normalizeCategory(value) {
+    if (typeof value !== 'string') {
+      return defaultCategory;
+    }
+    var trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : defaultCategory;
+  }
+
+  function normalizeArgs(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    var normalized = {};
+    var hasEntries = false;
+    for (var key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) {
+        continue;
+      }
+
+      var trimmedKey = String(key).trim();
+      if (!trimmedKey) {
+        continue;
+      }
+
+      var arg = value[key];
+      var argType = typeof arg;
+      if (
+        arg === null ||
+        argType === 'string' ||
+        argType === 'boolean' ||
+        (argType === 'number' && Number.isFinite(arg))
+      ) {
+        normalized[trimmedKey] = arg;
+        hasEntries = true;
+      }
+    }
+
+    return hasEntries ? normalized : undefined;
+  }
+
+  function post(op) {
+    var bridge = globalObj.ReactNativeWebView;
+    if (!bridge || typeof bridge.postMessage !== 'function') {
+      return false;
+    }
+
+    op.v = ${WEBVIEW_TRACE_PROTOCOL_VERSION};
+    op.s = sourceId;
+
+    try {
+      bridge.postMessage(channelPrefix + JSON.stringify(op));
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function createSectionHandle(sectionId) {
+    var ended = false;
+    return {
+      end: function() {
+        if (ended) {
+          return;
+        }
+        ended = true;
+        post({ t: 'e', i: sectionId });
+      }
+    };
+  }
+
+  var api = {
+    mode: 'js-relay',
+    sourceId: sourceId,
+    section: function(name, options) {
+      var sectionId = nextSectionId++;
+      var normalizedName = normalizeName(name, 'unnamed_section');
+      var normalizedCategory = normalizeCategory(options && options.category);
+      var normalizedArgs = normalizeArgs(options && options.args);
+      post({
+        t: 'b',
+        i: sectionId,
+        n: normalizedName,
+        c: normalizedCategory,
+        a: normalizedArgs
+      });
+      return createSectionHandle(sectionId);
+    },
+    event: function(name, options) {
+      var normalizedName = normalizeName(name, 'unnamed_event');
+      var normalizedCategory = normalizeCategory(options && options.category);
+      var normalizedArgs = normalizeArgs(options && options.args);
+      post({
+        t: 'i',
+        n: normalizedName,
+        c: normalizedCategory,
+        a: normalizedArgs
+      });
+    },
+    counter: function(name, value, options) {
+      if (!Number.isFinite(value)) {
+        return;
+      }
+
+      var normalizedName = normalizeName(name, 'counter');
+      var normalizedCategory = normalizeCategory(options && options.category);
+      var normalizedArgs = normalizeArgs(options && options.args);
+      post({
+        t: 'k',
+        n: normalizedName,
+        x: value,
+        c: normalizedCategory,
+        a: normalizedArgs
+      });
+    },
+    withSection: function(name, fn, options) {
+      var section = api.section(name, options);
+      try {
+        var result = fn();
+        if (result && typeof result.then === 'function') {
+          return result.finally(function() {
+            section.end();
+          });
+        }
+
+        section.end();
+        return result;
+      } catch (error) {
+        section.end();
+        throw error;
+      }
+    }
+  };
+
+  globalObj.ReactNativePerfetto = api;
+  post({ t: 'r' });
+})(${serializedConfig});
+true;
+`.trim();
 }
 
 function callSyncNative(fn: () => void, label: string): void {
@@ -540,6 +944,147 @@ export async function withSection<T>(
   } finally {
     section.end();
   }
+}
+
+export function createWebViewTraceBridge(
+  options: WebViewTraceBridgeOptions = {}
+): WebViewTraceBridge {
+  const requestedMode = options.mode ?? 'js-relay';
+  if (requestedMode === 'native-direct') {
+    throw createTraceError(
+      'ERR_WEBVIEW_MODE_UNSUPPORTED',
+      'WebView trace mode "native-direct" is not yet supported in this release. Use "js-relay".'
+    );
+  }
+
+  const sourceId = normalizeWebViewSourceId(options.sourceId);
+  const defaultCategory = normalizeCategory(
+    options.defaultCategory ?? `${DEFAULT_WEBVIEW_CATEGORY}.${sourceId}`
+  );
+  const maxPayloadBytes =
+    options.maxPayloadBytes && options.maxPayloadBytes > 0
+      ? Math.floor(options.maxPayloadBytes)
+      : DEFAULT_WEBVIEW_MAX_PAYLOAD_BYTES;
+  const bridgeIndex = nextWebViewBridgeId++;
+  const channelPrefix = `__RNPFWV__${bridgeIndex}__`;
+  const bridgeScript = buildWebViewBridgeBootstrapScript({
+    channelPrefix,
+    sourceId,
+    defaultCategory,
+  });
+
+  const openSections = new Map<number, TraceSection>();
+
+  const closeOpenSections = () => {
+    for (const section of openSections.values()) {
+      section.end();
+    }
+    openSections.clear();
+  };
+
+  const getSession = (): TraceSession | null =>
+    resolveWebViewSession(options.session);
+
+  const processMessage = (event: WebViewTraceMessageEvent): void => {
+    const rawData = extractWebViewMessageData(event);
+    if (typeof rawData !== 'string') {
+      return;
+    }
+    if (!rawData.startsWith(channelPrefix)) {
+      return;
+    }
+
+    const payload = rawData.slice(channelPrefix.length);
+    if (payload.length === 0 || payload.length > maxPayloadBytes) {
+      warnDev(
+        '[react-native-perfetto] Dropping WebView trace message due to empty/oversized payload.'
+      );
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch (error) {
+      warnDev(
+        '[react-native-perfetto] Dropping malformed WebView trace message.',
+        error
+      );
+      return;
+    }
+
+    const operation = toWebViewWireOperation(parsed);
+    if (!operation) {
+      return;
+    }
+    if (operation.s !== sourceId) {
+      return;
+    }
+
+    if (operation.t === 'r') {
+      closeOpenSections();
+      return;
+    }
+
+    const session = getSession();
+    if (!session) {
+      return;
+    }
+
+    if (operation.t === 'b') {
+      const previousSection = openSections.get(operation.i);
+      if (previousSection) {
+        previousSection.end();
+      }
+
+      const section = session.section(operation.n, {
+        category: operation.c ?? defaultCategory,
+        args: coerceTraceArgs(operation.a),
+      });
+      openSections.set(operation.i, section);
+      return;
+    }
+
+    if (operation.t === 'e') {
+      const section = openSections.get(operation.i);
+      if (!section) {
+        return;
+      }
+
+      openSections.delete(operation.i);
+      section.end();
+      return;
+    }
+
+    if (operation.t === 'i') {
+      session.event(operation.n, {
+        category: operation.c ?? defaultCategory,
+        args: coerceTraceArgs(operation.a),
+      });
+      return;
+    }
+
+    session.counter(operation.n, operation.x, {
+      category: operation.c ?? defaultCategory,
+      args: coerceTraceArgs(operation.a),
+    });
+  };
+
+  return {
+    mode: 'js-relay',
+    sourceId,
+    injectedJavaScriptBeforeContentLoaded: bridgeScript,
+    injectedJavaScript: bridgeScript,
+    onMessage: processMessage,
+    getWebViewProps: () => ({
+      injectedJavaScriptBeforeContentLoaded: bridgeScript,
+      injectedJavaScript: bridgeScript,
+      onMessage: processMessage,
+    }),
+    dispose: () => {
+      closeOpenSections();
+    },
+  };
 }
 
 /** @deprecated Use session.section(...). */

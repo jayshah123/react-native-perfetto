@@ -1,10 +1,11 @@
 # Public API Overview (TS -> Android -> C++)
 
-This repository exposes tracing APIs across three implementation layers:
+This repository exposes tracing APIs across four implementation layers:
 
 1. TypeScript public API (`src/index.tsx`)
 2. Android TurboModule + JNI bridge (`android/src/main/java/com/perfetto/PerfettoModule.kt`, `android/src/main/jni/reactnativeperfetto-jni.cpp`)
 3. Shared C++ tracer core (`cpp/ReactNativePerfettoTracer.h`, `cpp/ReactNativePerfettoTracer.cpp`)
+4. WebView bridge helper in TS (`createWebViewTraceBridge` in `src/index.tsx`)
 
 This document maps those layers so contracts stay aligned.
 
@@ -19,6 +20,7 @@ This document maps those layers so contracts stay aligned.
 | End section | `TraceSection.end()` / `endTraceSection()` (deprecated) | `endSection()` -> `nativeEndSection()` | `Tracer::EndSection()` |
 | Instant event | `TraceSession.event(...)` / `instantTraceEvent()` (deprecated) | `instantEvent(...)` -> `nativeInstantEvent(...)` | `Tracer::InstantEvent(...)` |
 | Counter | `TraceSession.counter(...)` / `setTraceCounter()` (deprecated) | `setCounter(...)` -> `nativeSetCounter(...)` | `Tracer::SetCounter(...)` |
+| WebView tracing | `createWebViewTraceBridge(...)` | relays through `onMessage` and existing methods | reuses existing tracer methods through session APIs |
 
 ## Canonical Public Surface
 
@@ -53,3 +55,4 @@ See:
 - `docs/ts-api.md`
 - `docs/android-api.md`
 - `docs/cpp-public-api.md`
+- `docs/webview-tracing-api.md`

@@ -79,6 +79,7 @@ interface TraceSession {
 - `startRecording(options?): Promise<TraceSession>`
 - `withRecording(fn, options?)`
 - `withSection(session, name, fn, options?)`
+- `createWebViewTraceBridge(options?)`
 
 ## Usage patterns
 
@@ -145,6 +146,34 @@ const { result, stop } = await withRecording(async (session) => {
 });
 
 console.log(result, stop.traceFilePath);
+```
+
+### 4) WebView tracing (`react-native-webview`)
+
+```tsx
+import React, { useMemo } from 'react';
+import { WebView } from 'react-native-webview';
+import { createWebViewTraceBridge, startRecording } from 'react-native-perfetto';
+
+const session = await startRecording();
+const bridge = createWebViewTraceBridge({
+  session,
+  sourceId: 'checkout-webview',
+  mode: 'js-relay',
+});
+
+<WebView source={{ uri: 'https://example.com' }} {...bridge.getWebViewProps()} />;
+```
+
+Inside page JS:
+
+```js
+window.ReactNativePerfetto.withSection('checkout-render', () => {
+  window.ReactNativePerfetto.event('checkout-ready', {
+    category: 'checkout',
+    args: { step: 'render' },
+  });
+});
 ```
 
 ## Compatibility wrappers (deprecated)
@@ -315,6 +344,7 @@ yarn prepare
 - TypeScript public API: `docs/ts-api.md`
 - Android TurboModule + JNI API: `docs/android-api.md`
 - C++ module public API: `docs/cpp-public-api.md`
+- WebView tracing API: `docs/webview-tracing-api.md`
 - Direct native C API plan: `docs/direct-cpp-api-exposure-plan.md`
 
 ## References
