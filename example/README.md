@@ -8,6 +8,7 @@ This app validates `react-native-perfetto` against a real React Native runtime.
 - Manual `try/finally` section management with section handles.
 - Helper-based lifecycle with `withSection` and `withRecording`.
 - Counter and event args payloads.
+- WebView bridge tracing via `createWebViewTraceBridge` and `react-native-webview`.
 - Stable test IDs for Maestro automation.
 
 ## Run
@@ -36,4 +37,6 @@ Use the root-level Maestro flow to validate capture:
 ```sh
 yarn maestro:install
 yarn maestro:test:capture-trace
+# or run the WebView bridge scenario:
+yarn maestro:test:capture-webview-trace
 ```

@@ -12,12 +12,16 @@ This document describes the end-to-end process used in this repo to:
 
 - Presence of completed slices created through begin/end semantics (`dur > 0` in Perfetto `slice` table).
 - For the dedicated busy-loop test, duration of `busy-loop-1s` is validated between `900ms` and `1500ms`.
+- For the WebView bridge test, `webview-demo-section` is emitted from inside `react-native-webview` and relayed through `createWebViewTraceBridge`.
 
 ## Test Artifacts
 
 - App button: `runOneSecondBusyLoopButton` (`example/src/App.tsx`)
 - Section name: `busy-loop-1s` (`example/src/App.tsx`)
 - Maestro flow: `.maestro/capture-busy-loop-1s.yaml`
+- WebView button: `runWebViewTracingDemoButton` (`example/src/App.tsx`)
+- WebView section name: `webview-demo-section` (`example/src/App.tsx`)
+- WebView Maestro flow: `.maestro/capture-webview-trace.yaml`
 - Playwright verifier: `scripts/verify-trace-playwright.mjs`
 - Trace pull scripts:
   - Android: `scripts/pull-latest-android-trace.sh`
@@ -166,6 +170,12 @@ yarn playwright:test:verify-busy-loop-1s
 yarn maestro:test:capture-and-verify-busy-loop-1s
 ```
 
+6. Capture and verify WebView bridge trace (Android):
+
+```sh
+yarn maestro:test:capture-and-verify-webview-trace
+```
+
 ## Known Android Release Caveat
 
 On many production-like Android environments (for example, Play Store system images), `run-as` is denied for non-debuggable release builds. The Android pull script relies on `adb shell run-as`, so trace extraction can fail even when capture itself succeeds.
@@ -214,6 +224,12 @@ yarn playwright:test:verify-trace
 
 ```sh
 yarn playwright:test:verify-trace -- --event withRecording-demo --event manual-synthetic-work
+```
+
+- Verify WebView bridge section:
+
+```sh
+yarn playwright:test:verify-webview-trace
 ```
 
 - Verify an explicit trace file:

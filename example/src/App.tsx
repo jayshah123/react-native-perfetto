@@ -9,23 +9,107 @@ import {
 } from 'react-native';
 import {
   isPerfettoSdkAvailable,
+  createWebViewTraceBridge,
   startRecording,
   withRecording,
   withSection,
   type TraceSession,
+  type WebViewTraceBridge,
 } from 'react-native-perfetto';
+import { WebView } from 'react-native-webview';
 
 const CATEGORY = 'react-native.example';
 const ONE_SECOND_BUSY_LOOP_MS = 1000;
+const WEBVIEW_CATEGORY = `${CATEGORY}.webview`;
+const WEBVIEW_DEMO_TIMEOUT_MS = 15_000;
+const WEBVIEW_DONE_SIGNAL = '__RN_PERFETTO_WEBVIEW_DEMO_DONE__';
+const WEBVIEW_TRACE_HTML = `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>react-native-perfetto webview demo</title>
+  </head>
+  <body>
+    <h1 id="status">booting</h1>
+    <script>
+      (function () {
+        var DONE_SIGNAL = '${WEBVIEW_DONE_SIGNAL}';
+        var CATEGORY = '${WEBVIEW_CATEGORY}';
+
+        function notifyDone() {
+          if (
+            typeof window === 'object' &&
+            window.ReactNativeWebView &&
+            typeof window.ReactNativeWebView.postMessage === 'function'
+          ) {
+            window.ReactNativeWebView.postMessage(DONE_SIGNAL);
+          }
+        }
+
+        function runDemo() {
+          var tracer = window.ReactNativePerfetto;
+          if (!tracer) {
+            setTimeout(runDemo, 16);
+            return;
+          }
+
+          tracer.withSection(
+            'webview-demo-section',
+            function () {
+              tracer.event('webview-demo-event', {
+                category: CATEGORY,
+                args: { phase: 'ready' }
+              });
+              tracer.counter('webview-demo-counter', 42, {
+                category: CATEGORY,
+                args: { unit: 'items' }
+              });
+
+              var start = Date.now();
+              while (Date.now() - start < 20) {}
+            },
+            {
+              category: CATEGORY,
+              args: { source: 'embedded-webview' }
+            }
+          );
+
+          var statusNode = document.getElementById('status');
+          if (statusNode) {
+            statusNode.textContent = 'done';
+          }
+
+          notifyDone();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', runDemo);
+          return;
+        }
+
+        runDemo();
+      })();
+    </script>
+  </body>
+</html>
+`.trim();
 
 export default function App() {
   const [recording, setRecording] = useState(false);
   const [traceFilePath, setTraceFilePath] = useState<string | null>(null);
   const [status, setStatus] = useState('Idle');
   const [tickCount, setTickCount] = useState(0);
+  const [webViewDemoActive, setWebViewDemoActive] = useState(false);
+  const [webViewBridge, setWebViewBridge] = useState<WebViewTraceBridge | null>(
+    null
+  );
+  const [webViewRunId, setWebViewRunId] = useState(0);
 
   const sessionRef = useRef<TraceSession | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const webViewBridgeRef = useRef<WebViewTraceBridge | null>(null);
+  const webViewCompletionRef = useRef<(() => void) | null>(null);
 
   const sdkAvailable = isPerfettoSdkAvailable();
 
@@ -34,6 +118,13 @@ export default function App() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+
+      if (webViewBridgeRef.current) {
+        webViewBridgeRef.current.dispose();
+        webViewBridgeRef.current = null;
+      }
+
+      webViewCompletionRef.current = null;
     };
   }, []);
 
@@ -252,6 +343,73 @@ export default function App() {
     }
   };
 
+  const handleRunWebViewTracingDemo = async () => {
+    if (recording || webViewDemoActive) {
+      setStatus('Finish current recording before running WebView demo');
+      return;
+    }
+
+    try {
+      setStatus('Running WebView tracing demo...');
+      setTraceFilePath(null);
+
+      const { stop } = await withRecording(async (session) => {
+        const bridge = createWebViewTraceBridge({
+          session,
+          sourceId: 'example-webview',
+          defaultCategory: WEBVIEW_CATEGORY,
+          mode: 'js-relay',
+        });
+
+        webViewBridgeRef.current = bridge;
+        setWebViewBridge(bridge);
+        setWebViewDemoActive(true);
+        setWebViewRunId((prev) => prev + 1);
+
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            webViewCompletionRef.current = resolve;
+            timeoutId = setTimeout(() => {
+              webViewCompletionRef.current = null;
+              reject(
+                new Error(
+                  `Timed out after ${WEBVIEW_DEMO_TIMEOUT_MS}ms waiting for WebView trace completion`
+                )
+              );
+            }, WEBVIEW_DEMO_TIMEOUT_MS);
+          });
+        } finally {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          webViewCompletionRef.current = null;
+
+          bridge.dispose();
+          if (webViewBridgeRef.current === bridge) {
+            webViewBridgeRef.current = null;
+          }
+
+          setWebViewBridge(null);
+          setWebViewDemoActive(false);
+        }
+      });
+
+      setTraceFilePath(stop.traceFilePath);
+      setStatus('WebView tracing demo completed');
+    } catch (error) {
+      if (webViewBridgeRef.current) {
+        webViewBridgeRef.current.dispose();
+        webViewBridgeRef.current = null;
+      }
+
+      webViewCompletionRef.current = null;
+      setWebViewBridge(null);
+      setWebViewDemoActive(false);
+      setStatus(`WebView tracing demo failed: ${String(error)}`);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -295,7 +453,44 @@ export default function App() {
             disabled={recording}
             testID="runOneSecondBusyLoopButton"
           />
+          <Button
+            title="Run WebView Trace Demo"
+            onPress={handleRunWebViewTracingDemo}
+            disabled={recording || webViewDemoActive}
+            testID="runWebViewTracingDemoButton"
+          />
         </View>
+
+        {webViewDemoActive && webViewBridge ? (
+          <View style={styles.webViewContainer}>
+            <Text style={styles.pathLabel}>WebView trace harness:</Text>
+            <WebView
+              key={`trace-webview-${webViewRunId}`}
+              source={{ html: WEBVIEW_TRACE_HTML }}
+              originWhitelist={['*']}
+              style={styles.webView}
+              injectedJavaScriptBeforeContentLoaded={
+                webViewBridge.injectedJavaScriptBeforeContentLoaded
+              }
+              injectedJavaScript={webViewBridge.injectedJavaScript}
+              onMessage={(event) => {
+                webViewBridge.onMessage(event);
+                if (event.nativeEvent.data !== WEBVIEW_DONE_SIGNAL) {
+                  return;
+                }
+
+                const resolve = webViewCompletionRef.current;
+                if (!resolve) {
+                  return;
+                }
+
+                webViewCompletionRef.current = null;
+                resolve();
+              }}
+              testID="traceWebView"
+            />
+          </View>
+        ) : null}
 
         <Text style={styles.status} testID="statusText">
           Status: {status}
@@ -308,6 +503,9 @@ export default function App() {
         </Text>
         <Text style={styles.status} testID="tracePathAvailableText">
           Trace path available: {traceFilePath ? 'yes' : 'no'}
+        </Text>
+        <Text style={styles.status} testID="webViewDemoActiveText">
+          WebView demo active: {webViewDemoActive ? 'yes' : 'no'}
         </Text>
 
         <Text style={styles.pathLabel}>Latest trace file path:</Text>
@@ -352,5 +550,12 @@ const styles = StyleSheet.create({
   pathValue: {
     fontSize: 12,
     color: '#0f172a',
+  },
+  webViewContainer: {
+    gap: 8,
+  },
+  webView: {
+    height: 200,
+    backgroundColor: '#ffffff',
   },
 });

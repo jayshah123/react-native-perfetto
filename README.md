@@ -254,9 +254,14 @@ Run capture flow:
 
 ```sh
 yarn maestro:test:capture-trace
+# or WebView bridge scenario
+yarn maestro:test:capture-webview-trace
 ```
 
-The flow file is `/.maestro/capture-trace.yaml`.
+Flow files:
+
+- `/.maestro/capture-trace.yaml`
+- `/.maestro/capture-webview-trace.yaml`
 
 Run the dedicated 1s busy-loop capture flow:
 

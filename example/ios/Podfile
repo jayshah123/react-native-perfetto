@@ -32,5 +32,15 @@ target 'PerfettoExample' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'react-native-webview'
+
+      target.build_configurations.each do |build_configuration|
+        header_search_paths = build_configuration.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+        build_configuration.build_settings['HEADER_SEARCH_PATHS'] =
+          "#{header_search_paths} \"${PODS_ROOT}/../build/generated/ios/ReactCodegen\""
+      end
+    end
   end
 end
