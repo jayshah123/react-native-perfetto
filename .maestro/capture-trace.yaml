@@ -1,6 +1,9 @@
 appId: perfetto.example
 ---
 - launchApp
+- extendedWaitUntil:
+    visible: "react-native-perfetto"
+    timeout: 30000
 - assertVisible: "react-native-perfetto"
 - assertVisible: "Perfetto SDK bundled: yes"
 - tapOn:

@@ -129,6 +129,44 @@ boot_ios_simulator_if_needed() {
   echo "$candidate_udid"
 }
 
+find_android_device_for_maestro() {
+  if ! command -v adb >/dev/null 2>&1; then
+    echo "adb is required for Android Maestro runs." >&2
+    return 1
+  fi
+
+  adb start-server >/dev/null 2>&1 || true
+
+  local preferred_serial="${MAESTRO_ANDROID_DEVICE:-}"
+  local serial
+  local devices=()
+
+  while IFS= read -r serial; do
+    if [ -n "$serial" ]; then
+      devices+=("$serial")
+    fi
+  done < <(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')
+
+  if [ -n "$preferred_serial" ]; then
+    for serial in "${devices[@]}"; do
+      if [ "$serial" = "$preferred_serial" ]; then
+        echo "$serial"
+        return 0
+      fi
+    done
+
+    echo "MAESTRO_ANDROID_DEVICE '$preferred_serial' is not connected." >&2
+    return 1
+  fi
+
+  if [ "${#devices[@]}" -eq 1 ]; then
+    echo "${devices[0]}"
+    return 0
+  fi
+
+  return 1
+}
+
 maestro_args=("$@")
 
 if [ "${1:-}" = "test" ] && [ "${MAESTRO_PLATFORM:-}" = "ios" ]; then
@@ -165,6 +203,26 @@ if [ "${1:-}" = "test" ] && [ "${MAESTRO_PLATFORM:-}" = "ios" ]; then
     fi
 
     maestro_args=(--device "$ios_udid" "${maestro_args[@]}")
+  fi
+fi
+
+if [ "${1:-}" = "test" ] && [ "${MAESTRO_PLATFORM:-}" = "android" ]; then
+  has_explicit_device_flag=false
+
+  for arg in "${maestro_args[@]}"; do
+    case "$arg" in
+      --udid | --device | --udid=* | --device=*)
+        has_explicit_device_flag=true
+        break
+        ;;
+    esac
+  done
+
+  if [ "$has_explicit_device_flag" = false ]; then
+    android_serial="$(find_android_device_for_maestro || true)"
+    if [ -n "$android_serial" ]; then
+      maestro_args=(--device "$android_serial" "${maestro_args[@]}")
+    fi
   fi
 fi
 

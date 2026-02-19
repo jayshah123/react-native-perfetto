@@ -11,6 +11,35 @@ This app validates `react-native-perfetto` against a real React Native runtime.
 - WebView bridge tracing via `createWebViewTraceBridge` and `react-native-webview`.
 - Stable test IDs for Maestro automation.
 
+## Quick Paths By Use Case
+
+### RN-only tracing
+
+Use these controls in the running sample app:
+
+- `runWithRecordingDemoButton`
+- `runOneSecondBusyLoopButton`
+
+Recommended verification commands from repo root:
+
+```sh
+yarn maestro:test:capture-busy-loop-1s
+yarn playwright:test:verify-busy-loop-1s
+```
+
+### RN + WebView tracing
+
+Use this control in the running sample app:
+
+- `runWebViewTracingDemoButton`
+
+Recommended verification commands from repo root:
+
+```sh
+yarn maestro:test:capture-webview-trace
+yarn playwright:test:verify-webview-trace
+```
+
 ## Run
 
 From repository root:

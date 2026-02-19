@@ -1,21 +1,23 @@
 #import "Perfetto.h"
 
-#import <React/RCTBridgeModule.h>
+#ifdef RCT_NEW_ARCH_ENABLED
+#import <PerfettoSpec/PerfettoSpec.h>
+#endif
 
 #import "../cpp/ReactNativePerfettoTracer.h"
 
-@implementation Perfetto
+namespace {
 
-- (NSNumber *)isPerfettoSdkAvailable {
+NSNumber *PerfettoIsPerfettoSdkAvailable() {
   return @(react_native_perfetto::Tracer::Get().IsPerfettoSdkAvailable());
 }
 
-- (void)startRecording:(NSString *)filePath
-          bufferSizeKb:(double)bufferSizeKb
-            durationMs:(double)durationMs
-               backend:(NSString *)backend
-               resolve:(RCTPromiseResolveBlock)resolve
-                reject:(RCTPromiseRejectBlock)reject {
+void PerfettoStartRecording(NSString *filePath,
+                            double bufferSizeKb,
+                            double durationMs,
+                            NSString *backend,
+                            RCTPromiseResolveBlock resolve,
+                            RCTPromiseRejectBlock reject) {
   react_native_perfetto::RecordingConfig config;
 
   NSString *resolvedPath = filePath;
@@ -38,7 +40,6 @@
 
   std::string error;
   const bool started = react_native_perfetto::Tracer::Get().StartRecording(config, &error);
-
   if (!started) {
     reject(@"ERR_PERFETTO_START", [NSString stringWithUTF8String:error.c_str()], nil);
     return;
@@ -47,8 +48,8 @@
   resolve(@(YES));
 }
 
-- (void)stopRecording:(RCTPromiseResolveBlock)resolve
-               reject:(RCTPromiseRejectBlock)reject {
+void PerfettoStopRecording(RCTPromiseResolveBlock resolve,
+                           RCTPromiseRejectBlock reject) {
   std::string outputPath;
   std::string error;
 
@@ -61,32 +62,32 @@
   resolve([NSString stringWithUTF8String:outputPath.c_str()]);
 }
 
-- (void)beginSection:(NSString *)category
-                name:(NSString *)name
-            argsJson:(NSString *)argsJson {
+void PerfettoBeginSection(NSString *category,
+                          NSString *name,
+                          NSString *argsJson) {
   react_native_perfetto::Tracer::Get().BeginSection(
       std::string(category.UTF8String),
       std::string(name.UTF8String),
       std::string(argsJson.UTF8String));
 }
 
-- (void)endSection {
+void PerfettoEndSection() {
   react_native_perfetto::Tracer::Get().EndSection();
 }
 
-- (void)instantEvent:(NSString *)category
-                name:(NSString *)name
-            argsJson:(NSString *)argsJson {
+void PerfettoInstantEvent(NSString *category,
+                          NSString *name,
+                          NSString *argsJson) {
   react_native_perfetto::Tracer::Get().InstantEvent(
       std::string(category.UTF8String),
       std::string(name.UTF8String),
       std::string(argsJson.UTF8String));
 }
 
-- (void)setCounter:(NSString *)category
-              name:(NSString *)name
-             value:(double)value
-          argsJson:(NSString *)argsJson {
+void PerfettoSetCounter(NSString *category,
+                        NSString *name,
+                        double value,
+                        NSString *argsJson) {
   react_native_perfetto::Tracer::Get().SetCounter(
       std::string(category.UTF8String),
       std::string(name.UTF8String),
@@ -94,13 +95,117 @@
       std::string(argsJson.UTF8String));
 }
 
+} // namespace
+
+@implementation Perfetto
+
+RCT_EXPORT_MODULE(Perfetto)
+
+#ifndef RCT_NEW_ARCH_ENABLED
+RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(isPerfettoSdkAvailable) {
+  return PerfettoIsPerfettoSdkAvailable();
+}
+
+RCT_REMAP_METHOD(startRecording,
+                 startRecording:(NSString *)filePath
+                 bufferSizeKb:(nonnull NSNumber *)bufferSizeKb
+                 durationMs:(nonnull NSNumber *)durationMs
+                 backend:(NSString *)backend
+                 resolve:(RCTPromiseResolveBlock)resolve
+                 reject:(RCTPromiseRejectBlock)reject) {
+  PerfettoStartRecording(filePath,
+                         bufferSizeKb.doubleValue,
+                         durationMs.doubleValue,
+                         backend,
+                         resolve,
+                         reject);
+}
+
+RCT_REMAP_METHOD(stopRecording,
+                 stopRecording:(RCTPromiseResolveBlock)resolve
+                 reject:(RCTPromiseRejectBlock)reject) {
+  PerfettoStopRecording(resolve, reject);
+}
+
+RCT_EXPORT_METHOD(beginSection:(NSString *)category
+                  name:(NSString *)name
+                  argsJson:(NSString *)argsJson) {
+  PerfettoBeginSection(category, name, argsJson);
+}
+
+RCT_EXPORT_METHOD(endSection) {
+  PerfettoEndSection();
+}
+
+RCT_EXPORT_METHOD(instantEvent:(NSString *)category
+                  name:(NSString *)name
+                  argsJson:(NSString *)argsJson) {
+  PerfettoInstantEvent(category, name, argsJson);
+}
+
+RCT_EXPORT_METHOD(setCounter:(NSString *)category
+                  name:(NSString *)name
+                  value:(double)value
+                  argsJson:(NSString *)argsJson) {
+  PerfettoSetCounter(category, name, value, argsJson);
+}
+#endif
+
+#ifdef RCT_NEW_ARCH_ENABLED
+- (NSNumber *)isPerfettoSdkAvailable {
+  return PerfettoIsPerfettoSdkAvailable();
+}
+
+- (void)startRecording:(NSString *)filePath
+          bufferSizeKb:(double)bufferSizeKb
+            durationMs:(double)durationMs
+               backend:(NSString *)backend
+               resolve:(RCTPromiseResolveBlock)resolve
+                reject:(RCTPromiseRejectBlock)reject {
+  PerfettoStartRecording(filePath,
+                         bufferSizeKb,
+                         durationMs,
+                         backend,
+                         resolve,
+                         reject);
+}
+
+- (void)stopRecording:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject {
+  PerfettoStopRecording(resolve, reject);
+}
+
+- (void)beginSection:(NSString *)category
+                name:(NSString *)name
+            argsJson:(NSString *)argsJson {
+  PerfettoBeginSection(category, name, argsJson);
+}
+
+- (void)endSection {
+  PerfettoEndSection();
+}
+
+- (void)instantEvent:(NSString *)category
+                name:(NSString *)name
+            argsJson:(NSString *)argsJson {
+  PerfettoInstantEvent(category, name, argsJson);
+}
+
+- (void)setCounter:(NSString *)category
+              name:(NSString *)name
+             value:(double)value
+          argsJson:(NSString *)argsJson {
+  PerfettoSetCounter(category, name, value, argsJson);
+}
+
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params {
   return std::make_shared<facebook::react::NativePerfettoSpecJSI>(params);
 }
+#endif
 
-+ (NSString *)moduleName {
-  return @"Perfetto";
++ (BOOL)requiresMainQueueSetup {
+  return NO;
 }
 
 @end

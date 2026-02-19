@@ -1,13 +1,13 @@
 # react-native-perfetto
 
-Perfetto-first tracing for React Native apps with a typed JS/TS API, TurboModule bridge, and shared C++ core.
+Perfetto-first tracing for React Native apps with a typed JS/TS API, dual-architecture native bridges, and a shared C++ core.
 
 ## What this library provides
 
 - Session-based tracing API for safe lifecycle management.
 - `withRecording` and `withSection` helpers that enforce `try/finally` semantics.
 - Flat scalar args support for events/counters/sections.
-- TurboModule integration for Android and iOS with a shared C++ core.
+- Dual-architecture bridge support for Android/iOS: TurboModule (New Architecture) and legacy NativeModule bridge (Old Architecture).
 - Compatibility wrappers for the previous global API.
 
 ## Installation
@@ -80,6 +80,45 @@ interface TraceSession {
 - `withRecording(fn, options?)`
 - `withSection(session, name, fn, options?)`
 - `createWebViewTraceBridge(options?)`
+
+## Choose Your Integration Path
+
+### Path A: React Native instrumentation only
+
+Use this when all traced code runs in the React Native app runtime.
+
+- Start here: section lifecycle APIs in this README under `Usage patterns` (examples 1-3).
+- Primary API docs: `docs/ts-api.md`.
+- Example app controls:
+  - `runWithRecordingDemoButton`
+  - `runOneSecondBusyLoopButton`
+- Verification flow:
+  - `yarn maestro:test:capture-busy-loop-1s`
+  - `yarn playwright:test:verify-busy-loop-1s`
+
+### Path B: React Native + WebView instrumentation
+
+Use this when you need traces from `react-native-webview` JavaScript to feed the same trace session.
+
+- Start here: `createWebViewTraceBridge(options?)` in this README (usage pattern 4).
+- Full integration sample: `docs/webview-tracing-api.md`.
+- Wire protocol details: `docs/webview-wire-protocol.md`.
+- Example app control:
+  - `runWebViewTracingDemoButton`
+- Verification flow:
+  - `yarn maestro:test:capture-webview-trace`
+  - `yarn playwright:test:verify-webview-trace`
+
+### Path C: Non-React-Native host + WebView protocol reuse
+
+Use this when the host app is not RN but you still want compatible WebView message parsing.
+
+- Reuse parser/types:
+  - `parseWebViewTracePayload(...)`
+  - `WebViewWireOperation`
+- Docs:
+  - `docs/webview-wire-protocol.md`
+  - `docs/webview-tracing-api.md` (`Non-RN Reuse` section)
 
 ## Usage patterns
 
@@ -233,6 +272,21 @@ yarn example android
 yarn example ios
 ```
 
+## Running the legacy example app (RN 0.75, old architecture)
+
+```sh
+yarn
+yarn example:legacy start
+```
+
+Then:
+
+```sh
+yarn example:legacy android
+# or
+yarn example:legacy ios
+```
+
 ## Maestro E2E
 
 The repository includes a basic Maestro flow that validates trace capture in the example app.
@@ -242,7 +296,9 @@ Preconditions:
 
 1. Perfetto SDK files are vendored (`yarn vendor:perfetto-sdk`).
 2. An emulator/simulator is running.
-3. The example app is installed and open on device (`perfetto.example`).
+3. The target app is installed and open on device:
+   - `perfetto.example` (main example app)
+   - `com.perfettolegacyexample` (legacy RN 0.75 app)
 
 Install Maestro CLI:
 
@@ -254,6 +310,8 @@ Run capture flow:
 
 ```sh
 yarn maestro:test:capture-trace
+# legacy RN 0.75 app
+yarn maestro:test:capture-trace:legacy
 # or WebView bridge scenario
 yarn maestro:test:capture-webview-trace
 ```
@@ -261,7 +319,10 @@ yarn maestro:test:capture-webview-trace
 Flow files:
 
 - `/.maestro/capture-trace.yaml`
+- `/.maestro/capture-trace-legacy.yaml`
 - `/.maestro/capture-webview-trace.yaml`
+
+Android Maestro scripts use `MAESTRO_PLATFORM=android` and auto-select a single connected ADB device to avoid interactive device prompts.
 
 Run the dedicated 1s busy-loop capture flow:
 

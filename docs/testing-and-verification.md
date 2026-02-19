@@ -14,11 +14,34 @@ This document describes the end-to-end process used in this repo to:
 - For the dedicated busy-loop test, duration of `busy-loop-1s` is validated between `900ms` and `1500ms`.
 - For the WebView bridge test, `webview-demo-section` is emitted from inside `react-native-webview` and relayed through `createWebViewTraceBridge`.
 
+## Choose Verification Flow
+
+### RN-only flow (no WebView requirement)
+
+Use this when validating regular React Native tracing APIs:
+
+```sh
+yarn maestro:test:capture-busy-loop-1s
+yarn trace:pull:ios # or yarn trace:pull:android
+yarn playwright:test:verify-busy-loop-1s
+```
+
+### RN + WebView flow
+
+Use this when validating `createWebViewTraceBridge` integration:
+
+```sh
+yarn maestro:test:capture-webview-trace
+yarn trace:pull:ios # or yarn trace:pull:android
+yarn playwright:test:verify-webview-trace
+```
+
 ## Test Artifacts
 
 - App button: `runOneSecondBusyLoopButton` (`example/src/App.tsx`)
 - Section name: `busy-loop-1s` (`example/src/App.tsx`)
 - Maestro flow: `.maestro/capture-busy-loop-1s.yaml`
+- Legacy Maestro flow: `.maestro/capture-trace-legacy.yaml`
 - WebView button: `runWebViewTracingDemoButton` (`example/src/App.tsx`)
 - WebView section name: `webview-demo-section` (`example/src/App.tsx`)
 - WebView Maestro flow: `.maestro/capture-webview-trace.yaml`
@@ -88,7 +111,24 @@ yarn vendor:perfetto-sdk
 yarn maestro:install
 ```
 
-4. Have an emulator/simulator running and the example app installed as `perfetto.example`.
+4. Have an emulator/simulator running and the target app installed:
+   - `perfetto.example` (main example app)
+   - `com.perfettolegacyexample` (legacy RN 0.75 app)
+
+Notes:
+
+- Android Maestro scripts run with `MAESTRO_PLATFORM=android`.
+- If exactly one Android device is connected via ADB, `scripts/run-maestro.sh` auto-selects it to avoid interactive prompts.
+
+## Legacy Android Smoke Verification (RN 0.75 old architecture)
+
+Use this to validate that basic recording still works in the old architecture app:
+
+```sh
+yarn example:legacy start
+yarn example:legacy android --no-packager
+yarn maestro:test:capture-trace:legacy
+```
 
 ## iOS Release Verification (Recommended for Release Coverage)
 

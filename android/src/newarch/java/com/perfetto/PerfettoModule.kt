@@ -7,7 +7,7 @@ class PerfettoModule(reactContext: ReactApplicationContext) :
   NativePerfettoSpec(reactContext) {
 
   override fun isPerfettoSdkAvailable(): Boolean {
-    return if (isNativeLibraryLoaded) {
+    return if (PerfettoNativeCommon.isNativeLibraryLoaded) {
       nativeIsPerfettoSdkAvailable()
     } else {
       false
@@ -22,11 +22,10 @@ class PerfettoModule(reactContext: ReactApplicationContext) :
     promise: Promise
   ) {
     try {
-      ensureNativeLibraryLoaded()
-      val resolvedPath = if (filePath.isNotBlank()) filePath else defaultTracePath()
+      PerfettoNativeCommon.ensureNativeLibraryLoaded()
       val started =
         nativeStartRecording(
-          resolvedPath,
+          PerfettoNativeCommon.resolveTracePath(reactApplicationContext, filePath),
           bufferSizeKb.toInt(),
           durationMs.toInt(),
           backend
@@ -39,7 +38,7 @@ class PerfettoModule(reactContext: ReactApplicationContext) :
 
   override fun stopRecording(promise: Promise) {
     try {
-      ensureNativeLibraryLoaded()
+      PerfettoNativeCommon.ensureNativeLibraryLoaded()
       val outputPath = nativeStopRecording()
       if (outputPath == null) {
         promise.reject(
@@ -55,19 +54,19 @@ class PerfettoModule(reactContext: ReactApplicationContext) :
   }
 
   override fun beginSection(category: String, name: String, argsJson: String) {
-    if (isNativeLibraryLoaded) {
+    if (PerfettoNativeCommon.isNativeLibraryLoaded) {
       nativeBeginSection(category, name, argsJson)
     }
   }
 
   override fun endSection() {
-    if (isNativeLibraryLoaded) {
+    if (PerfettoNativeCommon.isNativeLibraryLoaded) {
       nativeEndSection()
     }
   }
 
   override fun instantEvent(category: String, name: String, argsJson: String) {
-    if (isNativeLibraryLoaded) {
+    if (PerfettoNativeCommon.isNativeLibraryLoaded) {
       nativeInstantEvent(category, name, argsJson)
     }
   }
@@ -78,22 +77,13 @@ class PerfettoModule(reactContext: ReactApplicationContext) :
     value: Double,
     argsJson: String
   ) {
-    if (isNativeLibraryLoaded) {
+    if (PerfettoNativeCommon.isNativeLibraryLoaded) {
       nativeSetCounter(category, name, value, argsJson)
     }
   }
 
   companion object {
-    const val NAME = NativePerfettoSpec.NAME
-
-    private val isNativeLibraryLoaded: Boolean by lazy {
-      try {
-        System.loadLibrary("reactnativeperfetto")
-        true
-      } catch (_: UnsatisfiedLinkError) {
-        false
-      }
-    }
+    const val NAME = PERFETTO_MODULE_NAME
   }
 
   private external fun nativeIsPerfettoSdkAvailable(): Boolean
@@ -121,17 +111,4 @@ class PerfettoModule(reactContext: ReactApplicationContext) :
     value: Double,
     argsJson: String
   )
-
-  private fun defaultTracePath(): String {
-    val timestamp = System.currentTimeMillis()
-    return "${reactApplicationContext.cacheDir.absolutePath}/rn-perfetto-$timestamp.perfetto-trace"
-  }
-
-  private fun ensureNativeLibraryLoaded() {
-    if (!isNativeLibraryLoaded) {
-      throw IllegalStateException(
-        "reactnativeperfetto native library failed to load. Verify Android CMake configuration."
-      )
-    }
-  }
 }

@@ -37,14 +37,16 @@
   ],
   "scripts": {
     "example": "yarn workspace react-native-perfetto-example",
-    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
+    "example:legacy": "yarn workspace react-native-perfetto-example-legacy",
+    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build example-legacy/android/build example-legacy/android/app/build example-legacy/ios/build lib",
     "build": "bob build",
     "prepare": "bob build",
     "vendor:perfetto-sdk": "./scripts/vendor-perfetto-sdk.sh",
     "maestro:install": "./scripts/install-maestro.sh",
-    "maestro:test:capture-trace": "./scripts/run-maestro.sh test .maestro/capture-trace.yaml",
-    "maestro:test:capture-busy-loop-1s": "./scripts/run-maestro.sh test .maestro/capture-busy-loop-1s.yaml",
-    "maestro:test:capture-webview-trace": "./scripts/run-maestro.sh test .maestro/capture-webview-trace.yaml",
+    "maestro:test:capture-trace": "MAESTRO_PLATFORM=android ./scripts/run-maestro.sh test .maestro/capture-trace.yaml",
+    "maestro:test:capture-trace:legacy": "MAESTRO_PLATFORM=android ./scripts/run-maestro.sh test .maestro/capture-trace-legacy.yaml",
+    "maestro:test:capture-busy-loop-1s": "MAESTRO_PLATFORM=android ./scripts/run-maestro.sh test .maestro/capture-busy-loop-1s.yaml",
+    "maestro:test:capture-webview-trace": "MAESTRO_PLATFORM=android ./scripts/run-maestro.sh test .maestro/capture-webview-trace.yaml",
     "trace:pull:android": "./scripts/pull-latest-android-trace.sh",
     "trace:pull:ios": "./scripts/pull-latest-ios-trace.sh",
     "playwright:test:verify-trace": "node ./scripts/verify-trace-playwright.mjs",
@@ -103,7 +105,8 @@
     "react-native": "*"
   },
   "workspaces": [
-    "example"
+    "example",
+    "example-legacy"
   ],
   "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {

@@ -4,6 +4,11 @@ Source of truth: `src/index.tsx` (`createWebViewTraceBridge`)
 
 This API lets JS running inside a `react-native-webview` page emit trace sections/events/counters into the same active RN trace session.
 
+Audience:
+
+- If you only need React Native instrumentation (no WebView), use `docs/ts-api.md`.
+- If you need WebView page JS instrumentation, continue with this document.
+
 Wire protocol reference (shared with non-RN hosts): `docs/webview-wire-protocol.md`.
 
 ## Goal
@@ -51,7 +56,7 @@ function createWebViewTraceBridge(
 ): WebViewTraceBridge;
 ```
 
-## Integration Example
+## Minimal Integration Example
 
 ```tsx
 import React, { useMemo } from 'react';
@@ -96,6 +101,118 @@ export function TracedWebViewScreen() {
   return <WebView source={{ uri: 'https://example.com' }} {...bridge.getWebViewProps()} />;
 }
 ```
+
+## End-to-End Sample Integration (Example App Pattern)
+
+The example app (`example/src/App.tsx`) uses a full flow:
+
+1. Start recording with `withRecording`.
+2. Create a WebView bridge tied to that session.
+3. Render an HTML page that emits trace operations.
+4. Wait for an explicit completion signal from the page.
+5. Dispose the bridge and stop recording.
+
+```tsx
+import React from 'react';
+import { Button, View } from 'react-native';
+import { WebView } from 'react-native-webview';
+import {
+  createWebViewTraceBridge,
+  withRecording,
+  type WebViewTraceBridge,
+} from 'react-native-perfetto';
+
+const DONE_SIGNAL = '__RN_PERFETTO_WEBVIEW_DEMO_DONE__';
+const WEBVIEW_TRACE_HTML = `
+<!doctype html>
+<html>
+  <body>
+    <script>
+      (function () {
+        function run() {
+          var tracer = window.ReactNativePerfetto;
+          if (!tracer) {
+            setTimeout(run, 16);
+            return;
+          }
+
+          tracer.withSection('webview-demo-section', function () {
+            tracer.event('webview-demo-event', {
+              category: 'react-native.example.webview',
+              args: { phase: 'ready' }
+            });
+            tracer.counter('webview-demo-counter', 42, {
+              category: 'react-native.example.webview'
+            });
+          });
+
+          window.ReactNativeWebView.postMessage('${DONE_SIGNAL}');
+        }
+
+        run();
+      })();
+    </script>
+  </body>
+</html>
+`.trim();
+
+export function WebViewTraceDemo() {
+  const [bridge, setBridge] = React.useState<WebViewTraceBridge | null>(null);
+  const completionRef = React.useRef<(() => void) | null>(null);
+
+  const runDemo = async () => {
+    const { stop } = await withRecording(async (session) => {
+      const nextBridge = createWebViewTraceBridge({
+        session,
+        sourceId: 'example-webview',
+        defaultCategory: 'react-native.example.webview',
+        mode: 'js-relay',
+      });
+      setBridge(nextBridge);
+
+      try {
+        await new Promise<void>((resolve) => {
+          completionRef.current = resolve;
+        });
+      } finally {
+        completionRef.current = null;
+        nextBridge.dispose();
+        setBridge(null);
+      }
+    });
+
+    console.log(stop.traceFilePath);
+  };
+
+  const webViewProps = bridge?.getWebViewProps();
+
+  return (
+    <View>
+      <Button title="Run WebView Trace Demo" onPress={runDemo} />
+      {bridge && webViewProps ? (
+        <WebView
+          source={{ html: WEBVIEW_TRACE_HTML }}
+          injectedJavaScriptBeforeContentLoaded={
+            webViewProps.injectedJavaScriptBeforeContentLoaded
+          }
+          injectedJavaScript={webViewProps.injectedJavaScript}
+          onMessage={(event) => {
+            webViewProps.onMessage(event);
+            if (event.nativeEvent.data === DONE_SIGNAL) {
+              const resolve = completionRef.current;
+              completionRef.current = null;
+              resolve?.();
+            }
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+```
+
+This pattern keeps bridge/session lifecycle explicit and ensures the trace is
+stopped only after WebView work has completed.
 
 ## In-Page API (inside WebView)
 
@@ -145,6 +262,13 @@ try {
 3. Web content emits trace calls through `window.ReactNativePerfetto`.
 4. Stop session via normal `session.stop()`.
 5. Call `bridge.dispose()` if you need to force-close tracked WebView sections.
+
+Bootstrap timing detail:
+- The bridge installs the same bootstrap script in both
+  `injectedJavaScriptBeforeContentLoaded` and `injectedJavaScript` so the
+  global is installed as early as WebView allows.
+- Page code should still defensively check for `window.ReactNativePerfetto`
+  and retry briefly during startup, as shown in the sample above.
 
 ## Behavior and Constraints
 
