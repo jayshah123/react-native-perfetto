@@ -95,6 +95,14 @@ Operation types:
 3. On host message callback, call `parseWebViewTracePayload(...)`.
 4. If `ok: true`, dispatch operation to tracing backend.
 
+Ordering contract for section operations:
+
+- Treat section id `i` as the section handle key.
+- Track open section ids in begin-order.
+- End operations must close the most recently opened id (strict LIFO).
+- Drop out-of-order end operations to avoid host/native stack desync.
+- Drop duplicate begin operations that reuse an already-open id.
+
 ## React Native Host Example
 
 ```ts
@@ -123,8 +131,14 @@ val raw: String = incomingWebMessage
 val parsed = parseWebViewTracePayload(raw, options)
 if (parsed.ok) {
   when (parsed.operation.t) {
-    "b" -> tracer.beginSection(...)
-    "e" -> tracer.endSection(...)
+    "b" -> {
+      // validate unique id, push onto open-id stack
+      tracer.beginSection(...)
+    }
+    "e" -> {
+      // only end when id matches stack top (strict LIFO)
+      tracer.endSection(...)
+    }
     "i" -> tracer.instantEvent(...)
     "k" -> tracer.setCounter(...)
   }

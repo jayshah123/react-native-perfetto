@@ -6,6 +6,7 @@ Perfetto-first tracing for React Native apps with a typed JS/TS API, dual-archit
 
 - Session-based tracing API for safe lifecycle management.
 - `withRecording` and `withSection` helpers that enforce `try/finally` semantics.
+- First-class manual section lifecycle via `beginSection(...)` / `endSection(...)`.
 - Flat scalar args support for events/counters/sections.
 - Dual-architecture bridge support for Android/iOS: TurboModule (New Architecture) and legacy NativeModule bridge (Old Architecture).
 - Compatibility wrappers for the previous global API.
@@ -71,12 +72,19 @@ interface TraceSession {
   event(name: string, options?: EventOptions): void;
   counter(name: string, value: number, options?: CounterOptions): void;
 }
+
+interface BeginSectionOptions extends EventOptions {
+  session?: TraceSession;
+}
 ```
 
 ### Entry points
 
 - `isPerfettoSdkAvailable(): boolean`
+- `getActiveSession(): TraceSession | null`
 - `startRecording(options?): Promise<TraceSession>`
+- `beginSection(name, options?)`
+- `endSection(section)`
 - `withRecording(fn, options?)`
 - `withSection(session, name, fn, options?)`
 - `createWebViewTraceBridge(options?)`
@@ -100,7 +108,7 @@ Use this when all traced code runs in the React Native app runtime.
 
 Use this when you need traces from `react-native-webview` JavaScript to feed the same trace session.
 
-- Start here: `createWebViewTraceBridge(options?)` in this README (usage pattern 4).
+- Start here: `createWebViewTraceBridge(options?)` in this README (usage pattern 5).
 - Full integration sample: `docs/webview-tracing-api.md`.
 - Wire protocol details: `docs/webview-wire-protocol.md`.
 - Example app control:
@@ -187,7 +195,30 @@ const { result, stop } = await withRecording(async (session) => {
 console.log(result, stop.traceFilePath);
 ```
 
-### 4) WebView tracing (`react-native-webview`)
+### 4) Manual lifecycle from anywhere (active-session fallback)
+
+```ts
+import { beginSection, endSection, getActiveSession } from 'react-native-perfetto';
+
+const activeSession = getActiveSession();
+if (activeSession) {
+  activeSession.event('checkout-started', { category: 'checkout' });
+}
+
+const section = beginSection('checkout-db-write', {
+  category: 'checkout',
+});
+
+try {
+  // work across callbacks / boundaries
+} finally {
+  endSection(section);
+}
+```
+
+`beginSection(...)` prefers `options.session` and falls back to the active default session. Section ends are strict LIFO (matching native Perfetto/ATrace semantics), and out-of-order ends are ignored with a dev warning to preserve stack correctness.
+
+### 5) WebView tracing (`react-native-webview`)
 
 ```tsx
 import React, { useMemo } from 'react';
@@ -230,7 +261,7 @@ The previous global API is still available as thin wrappers and emits a dev-only
 - `stopRecording()`
 - `withTraceRecording(task, options?)`
 
-Prefer `TraceSession` + `withSection`/`withRecording` for new code.
+Prefer `TraceSession` + `withSection`/`withRecording` or first-class manual `beginSection`/`endSection` for new code.
 
 ## Error codes
 

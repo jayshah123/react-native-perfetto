@@ -62,6 +62,10 @@ export interface TraceSession {
   counter(name: string, value: number, options?: CounterOptions): void;
 }
 
+export interface BeginSectionOptions extends EventOptions {
+  session?: TraceSession;
+}
+
 export type WebViewTraceBridgeMode = 'js-relay' | 'native-direct';
 
 export interface WebViewTraceBridgeOptions {
@@ -108,6 +112,14 @@ let nextWebViewBridgeId = 1;
 
 const deprecatedWarnings = new Set<string>();
 const legacySectionStack: TraceSection[] = [];
+
+function getActiveDefaultSession(): TraceSessionImpl | null {
+  if (activeDefaultSession && activeDefaultSession.isActive()) {
+    return activeDefaultSession;
+  }
+
+  return null;
+}
 
 function warnDev(message: string, error?: unknown): void {
   if (!__DEV__) {
@@ -598,8 +610,7 @@ class TraceSectionImpl implements TraceSection {
       return;
     }
 
-    this.ended = true;
-    this.session.endSection(this);
+    this.ended = this.session.endSection(this);
   }
 }
 
@@ -610,6 +621,15 @@ class TraceSessionImpl implements TraceSession {
   private sectionStack: TraceSectionImpl[] = [];
 
   constructor(readonly id: number) {}
+
+  private closeOpenSectionsBeforeStop(): void {
+    while (this.sectionStack.length > 0) {
+      this.sectionStack.pop();
+      callSyncNative(() => {
+        NativePerfetto.endSection();
+      }, 'endSection');
+    }
+  }
 
   isActive(): boolean {
     return this.active;
@@ -633,6 +653,8 @@ class TraceSessionImpl implements TraceSession {
 
     this.stopPromise = (async () => {
       try {
+        this.closeOpenSectionsBeforeStop();
+
         const traceFilePath = await NativePerfetto.stopRecording();
         const stopResult: StopResult = { traceFilePath };
         this.stopResult = stopResult;
@@ -722,35 +744,62 @@ class TraceSessionImpl implements TraceSession {
     }, 'setCounter');
   }
 
-  endSection(section: TraceSectionImpl): void {
+  endSection(section: TraceSectionImpl): boolean {
     if (!this.active) {
-      return;
+      return true;
     }
 
     const top = this.sectionStack[this.sectionStack.length - 1];
-    if (top === section) {
-      this.sectionStack.pop();
-    } else {
+    if (top !== section) {
       const index = this.sectionStack.indexOf(section);
       if (index >= 0) {
-        this.sectionStack.splice(index, 1);
+        warnDev(
+          '[react-native-perfetto] section.end() called out of order. This end() call was ignored to preserve native section stack accuracy. End inner sections first.'
+        );
+        return false;
       }
 
-      warnDev(
-        '[react-native-perfetto] section.end() called out of order. Prefer nested/LIFO section usage.'
-      );
+      return true;
     }
 
+    this.sectionStack.pop();
     callSyncNative(() => {
       NativePerfetto.endSection();
     }, 'endSection');
+
+    return true;
   }
 }
 
-function ensureLegacySession(apiName: string): TraceSessionImpl | null {
-  const session = activeDefaultSession;
+function resolveManualSectionSession(
+  explicitSession?: TraceSession
+): TraceSession | null {
+  if (explicitSession) {
+    if (explicitSession.isActive()) {
+      return explicitSession;
+    }
 
-  if (!session || !session.isActive()) {
+    warnDev(
+      '[react-native-perfetto] beginSection() received an inactive session in options.session.'
+    );
+    return null;
+  }
+
+  const defaultSession = getActiveDefaultSession();
+  if (defaultSession) {
+    return defaultSession;
+  }
+
+  warnDev(
+    '[react-native-perfetto] beginSection() called without an active recording session. Start recording or pass options.session.'
+  );
+  return null;
+}
+
+function ensureLegacySession(apiName: string): TraceSessionImpl | null {
+  const session = getActiveDefaultSession();
+
+  if (!session) {
     warnDev(
       `[react-native-perfetto] ${apiName} called without an active recording session.`
     );
@@ -764,10 +813,38 @@ export function isPerfettoSdkAvailable(): boolean {
   return NativePerfetto.isPerfettoSdkAvailable();
 }
 
+export function getActiveSession(): TraceSession | null {
+  return getActiveDefaultSession();
+}
+
+export function beginSection(
+  name: string,
+  options: BeginSectionOptions = {}
+): TraceSection {
+  const session = resolveManualSectionSession(options.session);
+  if (!session) {
+    return new NoopTraceSection();
+  }
+
+  return session.section(name, {
+    category: options.category,
+    args: options.args,
+  });
+}
+
+export function endSection(section: TraceSection | null | undefined): void {
+  if (!section) {
+    warnDev('[react-native-perfetto] endSection() requires a section handle.');
+    return;
+  }
+
+  section.end();
+}
+
 export async function startRecording(
   options: RecordingOptions = {}
 ): Promise<TraceSession> {
-  if (activeDefaultSession && activeDefaultSession.isActive()) {
+  if (getActiveDefaultSession()) {
     throw createTraceError(
       'ERR_RECORDING_ALREADY_ACTIVE',
       'A recording session is already active. Stop it before starting another one.'
@@ -871,11 +948,18 @@ export function createWebViewTraceBridge(
   });
 
   const openSections = new Map<number, TraceSection>();
+  const openSectionOrder: number[] = [];
 
   const closeOpenSections = () => {
-    for (const section of openSections.values()) {
-      section.end();
+    while (openSectionOrder.length > 0) {
+      const sectionId = openSectionOrder.pop() as number;
+      const section = openSections.get(sectionId);
+      if (section) {
+        section.end();
+      }
+      openSections.delete(sectionId);
     }
+
     openSections.clear();
   };
 
@@ -917,16 +1001,20 @@ export function createWebViewTraceBridge(
     }
 
     if (operation.t === 'b') {
-      const previousSection = openSections.get(operation.i);
-      if (previousSection) {
-        previousSection.end();
+      if (openSections.has(operation.i)) {
+        warnDev(
+          '[react-native-perfetto] Dropping WebView begin section message with duplicate section id.'
+        );
+        return;
       }
 
       const section = session.section(operation.n, {
         category: operation.c ?? defaultCategory,
         args: coerceTraceArgs(operation.a),
       });
+
       openSections.set(operation.i, section);
+      openSectionOrder.push(operation.i);
       return;
     }
 
@@ -936,6 +1024,15 @@ export function createWebViewTraceBridge(
         return;
       }
 
+      const topSectionId = openSectionOrder[openSectionOrder.length - 1];
+      if (topSectionId !== operation.i) {
+        warnDev(
+          '[react-native-perfetto] Dropping out-of-order WebView section end. End WebView sections in LIFO order.'
+        );
+        return;
+      }
+
+      openSectionOrder.pop();
       openSections.delete(operation.i);
       section.end();
       return;
@@ -972,9 +1069,9 @@ export function createWebViewTraceBridge(
   };
 }
 
-/** @deprecated Use session.section(...). */
+/** @deprecated Use beginSection(name, { category }) and endSection(handle). */
 export function beginTraceSection(category: string, name: string): void {
-  warnDeprecatedOnce('beginTraceSection', 'session.section(name, options)');
+  warnDeprecatedOnce('beginTraceSection', 'beginSection(name, { category })');
 
   const session = ensureLegacySession('beginTraceSection');
   if (!session) {
@@ -985,9 +1082,9 @@ export function beginTraceSection(category: string, name: string): void {
   legacySectionStack.push(section);
 }
 
-/** @deprecated Use TraceSection.end(). */
+/** @deprecated Use endSection(handle). */
 export function endTraceSection(): void {
-  warnDeprecatedOnce('endTraceSection', 'section.end()');
+  warnDeprecatedOnce('endTraceSection', 'endSection(handle)');
 
   const section = legacySectionStack.pop();
   if (!section) {

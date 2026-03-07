@@ -44,6 +44,10 @@ interface TraceSession {
   event(name: string, options?: EventOptions): void;
   counter(name: string, value: number, options?: CounterOptions): void;
 }
+
+interface BeginSectionOptions extends EventOptions {
+  session?: TraceSession;
+}
 ```
 
 ## Functions
@@ -51,6 +55,21 @@ interface TraceSession {
 ### `isPerfettoSdkAvailable(): boolean`
 
 - Returns sync availability from native module.
+
+### `getActiveSession(): TraceSession | null`
+
+- Returns the current active default session, or `null` when no recording is active.
+- Useful for “instrument from anywhere” call-sites where threading a session parameter is awkward.
+
+### `beginSection(name, options?): TraceSection`
+
+- First-class manual lifecycle API.
+- Resolves target session from `options.session` first, then falls back to `getActiveSession()`.
+- Returns a no-op section if no active session is available (dev warning).
+
+### `endSection(section): void`
+
+- Convenience helper that calls `section.end()`.
 
 ### `startRecording(options?: RecordingOptions): Promise<TraceSession>`
 
@@ -124,6 +143,7 @@ Related exports:
 
 - Idempotent per session after success (returns cached stop result).
 - If called on inactive session without cached result, throws `ERR_NO_ACTIVE_SESSION`.
+- Any still-open sections are ended in LIFO order before native stop.
 
 ### `section(name, options?)`
 
@@ -132,6 +152,8 @@ Related exports:
 - Name fallback: `unnamed_section`.
 - Category fallback: `react-native`.
 - Args are normalized, filtered, key-sorted, and JSON serialized.
+- End order is strict LIFO to match native Perfetto/ATrace semantics.
+- Out-of-order `section.end()` calls are ignored (dev warning) to avoid native stack desync.
 
 ### `event(name, options?)`
 
@@ -167,4 +189,4 @@ These still route through session-first internals and emit dev warnings:
 - `stopRecording()`
 - `withTraceRecording(task, options?)`
 
-Prefer `startRecording` + `TraceSession` + `withRecording`/`withSection`.
+Prefer `startRecording` + `TraceSession` + `withRecording`/`withSection` or first-class manual `beginSection`/`endSection`.

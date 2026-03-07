@@ -89,6 +89,8 @@ JNI then calls:
 ### Instrumentation
 
 - `beginSection`, `endSection`, `instantEvent`, `setCounter` are synchronous bridge calls.
+- Native `endSection()` closes the most recent open section (LIFO).
+- JS/TS public APIs enforce strict LIFO semantics before calling into this layer to prevent stack desync.
 
 ## C++ Error Propagation
 

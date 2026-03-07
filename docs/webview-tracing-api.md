@@ -276,7 +276,8 @@ Bootstrap timing detail:
 - Unknown/malformed/oversized payloads are dropped.
 - If no active session exists, WebView messages are ignored.
 - `dispose()` ends any still-open mapped sections in the bridge.
-- Section ordering remains best with nested/LIFO usage.
+- WebView section end order is strict LIFO; out-of-order end operations are dropped.
+- Duplicate WebView begin operations that reuse an open section id are dropped.
 
 ## Performance Notes
 

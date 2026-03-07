@@ -5,7 +5,7 @@ Guidance for coding agents working on `react-native-perfetto`.
 ## Goal
 
 This repository provides a React Native tracing library backed by a shared C++ core and TurboModule bridges on Android and iOS.
-The public API is session-first (`startRecording` -> `TraceSession`) with optional compatibility wrappers.
+The public API is session-first (`startRecording` -> `TraceSession`) with first-class manual lifecycle helpers (`beginSection`/`endSection`) and deprecated compatibility wrappers.
 
 ## High-level architecture
 
@@ -33,7 +33,8 @@ The public API is session-first (`startRecording` -> `TraceSession`) with option
 ## Engineering rules
 
 - Keep JS API backward compatible when possible.
-- Prefer `withSection`/`withRecording` and explicit `try/finally` lifecycle patterns in examples/docs.
+- Keep `withSection`/`withRecording` as safe defaults, but treat manual `beginSection`/`endSection` as a first-class lane in docs and examples.
+- Document and preserve strict LIFO section-end semantics (out-of-order section ends are ignored in JS to avoid JS/native stack desync).
 - Keep Android and iOS behavior aligned for method semantics and errors.
 - Prefer implementing core logic in C++ and keep platform bridges thin.
 - Do not add app-level New Architecture hooks that require host app manual edits.

@@ -12,7 +12,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 latest_trace_path="$(
-  adb shell run-as "$APP_ID" sh -c "ls -t cache/rn-perfetto-*.perfetto-trace 2>/dev/null | head -n 1" \
+  adb shell "run-as $APP_ID sh -c 'ls -t cache/rn-perfetto-*.perfetto-trace 2>/dev/null | head -n 1'" \
     | tr -d '\r'
 )"
 
@@ -21,10 +21,18 @@ if [ -z "$latest_trace_path" ]; then
   exit 1
 fi
 
+case "$latest_trace_path" in
+  cache/rn-perfetto-*.perfetto-trace) ;;
+  *)
+    echo "Resolved trace path is unexpected: $latest_trace_path" >&2
+    exit 1
+    ;;
+esac
+
 trace_file_name="$(basename "$latest_trace_path")"
 local_trace_path="$OUTPUT_DIR/$trace_file_name"
 
-adb exec-out run-as "$APP_ID" cat "$latest_trace_path" > "$local_trace_path"
+adb exec-out "run-as $APP_ID cat $latest_trace_path" > "$local_trace_path"
 
 if [ ! -s "$local_trace_path" ]; then
   rm -f "$local_trace_path"

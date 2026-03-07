@@ -14,10 +14,11 @@ This document maps those layers so contracts stay aligned.
 | Capability | TS entry point | Android bridge | C++ core |
 | --- | --- | --- | --- |
 | SDK availability | `isPerfettoSdkAvailable()` | `isPerfettoSdkAvailable()` -> `nativeIsPerfettoSdkAvailable()` | `Tracer::IsPerfettoSdkAvailable()` |
+| Active session lookup | `getActiveSession()` | n/a (TS-only helper) | n/a |
 | Start recording | `startRecording(options)` | `startRecording(...)` -> `nativeStartRecording(...)` | `Tracer::StartRecording(...)` |
 | Stop recording | `TraceSession.stop()` / `stopRecording()` (deprecated) | `stopRecording(...)` -> `nativeStopRecording()` | `Tracer::StopRecording(...)` |
-| Begin section | `TraceSession.section(...)` / `beginTraceSection()` (deprecated) | `beginSection(...)` -> `nativeBeginSection(...)` | `Tracer::BeginSection(...)` |
-| End section | `TraceSection.end()` / `endTraceSection()` (deprecated) | `endSection()` -> `nativeEndSection()` | `Tracer::EndSection()` |
+| Begin section | `TraceSession.section(...)` / `beginSection(...)` / `beginTraceSection()` (deprecated) | `beginSection(...)` -> `nativeBeginSection(...)` | `Tracer::BeginSection(...)` |
+| End section | `TraceSection.end()` / `endSection(...)` / `endTraceSection()` (deprecated) | `endSection()` -> `nativeEndSection()` | `Tracer::EndSection()` |
 | Instant event | `TraceSession.event(...)` / `instantTraceEvent()` (deprecated) | `instantEvent(...)` -> `nativeInstantEvent(...)` | `Tracer::InstantEvent(...)` |
 | Counter | `TraceSession.counter(...)` / `setTraceCounter()` (deprecated) | `setCounter(...)` -> `nativeSetCounter(...)` | `Tracer::SetCounter(...)` |
 | WebView tracing | `createWebViewTraceBridge(...)` | relays through `onMessage` and existing methods | reuses existing tracer methods through session APIs |
@@ -42,6 +43,7 @@ Constraints:
 
 - Only one active session at TS layer (`startRecording` rejects if one is active).
 - `TraceSection.end()` should be balanced with `session.section(...)`.
+- Section end order is strict LIFO in TS to preserve native stack correctness.
 - Deprecated wrappers still work but route through the active session model.
 
 ## SDK Availability Contract
