@@ -57,6 +57,9 @@
     "maestro:test:capture-and-verify-webview-trace": "yarn maestro:test:capture-webview-trace && yarn trace:pull:android && yarn playwright:test:verify-webview-trace -- --headed",
     "maestro:test:capture-and-verify-busy-loop-1s:ios": "MAESTRO_PLATFORM=ios yarn maestro:test:capture-busy-loop-1s && yarn trace:pull:ios && yarn playwright:test:verify-busy-loop-1s -- --headed",
     "maestro:test": "yarn maestro:test:capture-trace",
+    "test": "yarn test:ts && yarn test:cpp",
+    "test:ts": "node --experimental-strip-types --test tests/ts/*.test.mjs",
+    "test:cpp": "./scripts/test-cpp.sh",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\""
   },

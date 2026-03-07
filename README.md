@@ -434,10 +434,16 @@ Open traces in Perfetto UI:
 ## Development
 
 ```sh
+yarn test
 yarn typecheck
 yarn lint
 yarn prepare
 ```
+
+The unit test command runs:
+
+- TypeScript protocol/parser tests under `tests/ts/` via Node's built-in test runner.
+- Host C++ tracer tests under `cpp/tests/` via `scripts/test-cpp.sh`.
 
 ## API Documentation
 
