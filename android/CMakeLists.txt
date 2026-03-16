@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(REACT_NATIVE_PERFETTO_SOURCES
   src/main/jni/reactnativeperfetto-jni.cpp
   ../cpp/ReactNativePerfettoTracer.cpp
+  ../cpp/tracer_c_api.cpp
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/third_party/perfetto/sdk/perfetto.cc")
@@ -19,6 +20,7 @@ add_library(reactnativeperfetto SHARED ${REACT_NATIVE_PERFETTO_SOURCES})
 target_include_directories(
   reactnativeperfetto
   PRIVATE
+  ../cpp/include
   ../cpp
 )
 

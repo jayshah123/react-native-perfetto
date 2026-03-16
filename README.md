@@ -128,6 +128,16 @@ Use this when the host app is not RN but you still want compatible WebView messa
   - `docs/webview-wire-protocol.md`
   - `docs/webview-tracing-api.md` (`Non-RN Reuse` section)
 
+### Path D: App-Owned Utility JSI Module (Tracing Hidden Internally)
+
+Use this when you want to keep tracing as an implementation detail inside native C++ while exposing a domain-focused utility API to JS.
+
+- Example workspace app: `example-jsi`
+- Run:
+  - `yarn example:jsi start`
+  - `yarn example:jsi android`
+  - `yarn example:jsi ios`
+
 ## Usage patterns
 
 ### 1) Manual `try/finally` section lifecycle
