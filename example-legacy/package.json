@@ -6,6 +6,7 @@
     "android": "react-native run-android",
     "build:android": "react-native build-android --extra-params \"--no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a\"",
     "build:ios": "react-native build-ios --mode Debug",
+    "build:ios:ci": "react-native build-ios --mode Debug --force-pods --verbose --extra-params \"-resultBundlePath build/ci-build.xcresult\"",
     "ios": "react-native run-ios",
     "start": "react-native start",
     "lint": "eslint .",
