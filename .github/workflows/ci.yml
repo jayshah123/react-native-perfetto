@@ -188,7 +188,7 @@ jobs:
             --log-order=stream \
             --log-prefix=task \
             --output-logs=full \
-            -- --verbose --extra-params "-resultBundlePath ios/build/ci-build.xcresult"
+            -- --verbose --extra-params "-resultBundlePath build/ci-build.xcresult"
 
       - name: Upload iOS xcresult bundles
         if: always()
