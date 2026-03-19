@@ -98,6 +98,11 @@ jobs:
         run: |
           /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
 
+      - name: Install Android NDKs used by examples
+        if: env.turbo_cache_hit != 1
+        run: |
+          /bin/bash -c "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \"ndk;27.1.12297006\" \"ndk;26.1.10909125\""
+
 
       - name: Cache Gradle
         if: env.turbo_cache_hit != 1
@@ -160,8 +165,32 @@ jobs:
           cd example
           bundle install
           bundle exec pod repo update --verbose
-          bundle exec pod install --project-directory=ios
+          bundle exec pod install --project-directory=ios --verbose
 
-      - name: Build example for iOS
+      - name: Prepare iOS xcresult directories
         run: |
-          yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+          mkdir -p example/ios/build
+          mkdir -p example-jsi/ios/build
+          mkdir -p example-legacy/ios/build
+
+      - name: Build example for iOS (verbose)
+        run: |
+          yarn turbo run build:ios \
+            --cache-dir="${{ env.TURBO_CACHE_DIR }}" \
+            --ui=stream \
+            --log-order=stream \
+            --log-prefix=task \
+            --output-logs=full \
+            -- --verbose --extra-params "-resultBundlePath ios/build/ci-build.xcresult"
+
+      - name: Upload iOS xcresult bundles
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-xcresult-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            example/ios/build/*.xcresult
+            example-jsi/ios/build/*.xcresult
+            example-legacy/ios/build/*.xcresult
