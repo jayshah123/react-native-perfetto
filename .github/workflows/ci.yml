@@ -160,8 +160,14 @@ jobs:
           cd example
           bundle install
           bundle exec pod repo update --verbose
-          bundle exec pod install --project-directory=ios
+          bundle exec pod install --project-directory=ios --verbose
 
-      - name: Build example for iOS
+      - name: Build example for iOS (verbose)
         run: |
-          yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+          yarn turbo run build:ios \
+            --cache-dir="${{ env.TURBO_CACHE_DIR }}" \
+            --ui=stream \
+            --log-order=stream \
+            --log-prefix=task \
+            --output-logs=full \
+            -- --verbose
