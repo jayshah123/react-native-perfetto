@@ -200,3 +200,48 @@ jobs:
             example/ios/build/*.xcresult
             example-jsi/ios/build/*.xcresult
             example-legacy/ios/build/*.xcresult
+
+  build-ios-jsi-old-arch-smoke:
+    runs-on: macos-latest
+    continue-on-error: true
+
+    env:
+      XCODE_VERSION: 26
+      RCT_USE_RN_DEP: 1
+      RCT_USE_PREBUILT_RNCORE: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Use appropriate Xcode version
+        uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Install cocoapods for example-jsi
+        run: |
+          cd example-jsi
+          bundle install
+          RCT_NEW_ARCH_ENABLED=0 bundle exec pod repo update --verbose
+          RCT_NEW_ARCH_ENABLED=0 bundle exec pod install --project-directory=ios --verbose
+
+      - name: Prepare old-arch iOS xcresult directory
+        run: |
+          mkdir -p example-jsi/ios/build
+
+      - name: Build example-jsi for iOS old architecture (smoke)
+        run: |
+          yarn workspace react-native-perfetto-example-jsi build:ios:ci:old-arch
+
+      - name: Upload old-arch iOS xcresult bundle
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-xcresult-old-arch-jsi-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: example-jsi/ios/build/*old-arch.xcresult

@@ -52,6 +52,20 @@ yarn example:jsi android
 yarn example:jsi ios
 ```
 
+Architecture-specific iOS commands (from repository root):
+
+```sh
+# New Architecture
+yarn workspace react-native-perfetto-example-jsi ios:new-arch
+
+# Old Architecture
+yarn workspace react-native-perfetto-example-jsi ios:old-arch
+
+# CI-style builds
+yarn workspace react-native-perfetto-example-jsi build:ios:ci:new-arch
+yarn workspace react-native-perfetto-example-jsi build:ios:ci:old-arch
+```
+
 ## E2E Trace Verification
 
 From repository root:
