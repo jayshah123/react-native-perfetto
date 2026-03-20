@@ -9,9 +9,7 @@ mkdir -p .test-dist/cpp
   -Wextra \
   -DRN_PERFETTO_WITH_SDK=0 \
   -Icpp \
-  -Icpp/include \
   cpp/ReactNativePerfettoTracer.cpp \
-  cpp/tracer_c_api.cpp \
   cpp/tests/ReactNativePerfettoTracer.test.cpp \
   -o .test-dist/cpp/reactnativeperfetto-tracer-test
 
