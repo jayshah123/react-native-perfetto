@@ -44,9 +44,11 @@ android.iml
 # Cocoapods
 #
 example/ios/Pods
+example-jsi/ios/Pods
 
 # Ruby
 example/vendor/
+example-jsi/vendor/
 
 # node.js
 #
@@ -92,3 +94,6 @@ output/
 example/ios/PerfettoExample.xcworkspace/
 example/ios/Podfile.lock
 example/Gemfile.lock
+example-jsi/ios/PerfettoExample.xcworkspace/
+example-jsi/ios/Podfile.lock
+example-jsi/Gemfile.lock

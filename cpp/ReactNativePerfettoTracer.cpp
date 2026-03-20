@@ -1,5 +1,6 @@
 #include "ReactNativePerfettoTracer.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -76,9 +77,33 @@ std::string sanitizeEventName(const std::string &value,
   return value;
 }
 
-#if defined(__APPLE__) && TARGET_OS_IOS
-thread_local std::vector<os_signpost_id_t> g_signpost_stack;
+struct SectionFrame {
+  bool c_api_owned = false;
+  uint64_t c_api_handle = 0;
+
+#if RN_PERFETTO_WITH_SDK
+  uint64_t sdk_track_id = 0;
 #endif
+
+#if defined(__APPLE__) && TARGET_OS_IOS
+  os_signpost_id_t signpost_id = OS_SIGNPOST_ID_NULL;
+#endif
+};
+
+std::atomic<uint64_t> g_next_c_api_section_handle{1};
+thread_local std::vector<SectionFrame> g_section_stack;
+
+#if RN_PERFETTO_WITH_SDK
+std::atomic<uint64_t> g_next_sdk_section_track_id{1};
+#endif
+
+uint64_t nextNonZeroHandle(std::atomic<uint64_t> &counter) {
+  uint64_t next = counter.fetch_add(1, std::memory_order_relaxed);
+  if (next == 0) {
+    next = counter.fetch_add(1, std::memory_order_relaxed);
+  }
+  return next;
+}
 
 } // namespace
 
@@ -123,10 +148,19 @@ std::string Tracer::buildEventName(const std::string &category,
   return result;
 }
 
-bool Tracer::StartRecording(const RecordingConfig &config, std::string *error) {
+bool Tracer::StartRecording(const RecordingConfig &config,
+                            std::string *error,
+                            OperationStatus *status) {
+  if (status != nullptr) {
+    *status = OperationStatus::Ok;
+  }
+
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (recording_) {
+    if (status != nullptr) {
+      *status = OperationStatus::AlreadyRunning;
+    }
     if (error != nullptr) {
       *error = "A Perfetto recording session is already running.";
     }
@@ -171,12 +205,13 @@ bool Tracer::StartRecording(const RecordingConfig &config, std::string *error) {
   tracing_session_->StartBlocking();
 
   current_output_path_ = resolveOutputPath(config.file_path);
-  next_section_track_id_ = 1;
-  active_section_track_ids_.clear();
   recording_ = true;
   return true;
 #else
   (void)config;
+  if (status != nullptr) {
+    *status = OperationStatus::Unsupported;
+  }
   if (error != nullptr) {
     *error =
         "Perfetto SDK is not bundled. Add sdk/perfetto.h and sdk/perfetto.cc "
@@ -186,10 +221,19 @@ bool Tracer::StartRecording(const RecordingConfig &config, std::string *error) {
 #endif
 }
 
-bool Tracer::StopRecording(std::string *output_path, std::string *error) {
+bool Tracer::StopRecording(std::string *output_path,
+                           std::string *error,
+                           OperationStatus *status) {
+  if (status != nullptr) {
+    *status = OperationStatus::Ok;
+  }
+
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (!recording_) {
+    if (status != nullptr) {
+      *status = OperationStatus::NoActiveSession;
+    }
     if (error != nullptr) {
       *error = "No active recording session to stop.";
     }
@@ -204,6 +248,9 @@ bool Tracer::StopRecording(std::string *output_path, std::string *error) {
     recording_ = false;
     tracing_session_.reset();
 
+    if (status != nullptr) {
+      *status = OperationStatus::Internal;
+    }
     if (error != nullptr) {
       *error = "Perfetto returned an empty trace payload.";
     }
@@ -216,6 +263,9 @@ bool Tracer::StopRecording(std::string *output_path, std::string *error) {
     recording_ = false;
     tracing_session_.reset();
 
+    if (status != nullptr) {
+      *status = OperationStatus::Internal;
+    }
     if (error != nullptr) {
       *error = "Failed to open output file: " + resolved_path;
     }
@@ -226,7 +276,6 @@ bool Tracer::StopRecording(std::string *output_path, std::string *error) {
                static_cast<std::streamsize>(trace_bytes.size()));
   output.close();
 
-  active_section_track_ids_.clear();
   recording_ = false;
   tracing_session_.reset();
 
@@ -236,6 +285,9 @@ bool Tracer::StopRecording(std::string *output_path, std::string *error) {
 
   return true;
 #else
+  if (status != nullptr) {
+    *status = OperationStatus::Unsupported;
+  }
   if (error != nullptr) {
     *error = "Perfetto SDK is not available; nothing to stop.";
   }
@@ -246,69 +298,112 @@ bool Tracer::StopRecording(std::string *output_path, std::string *error) {
 #endif
 }
 
-void Tracer::BeginSection(const std::string &category,
-                          const std::string &name,
-                          const std::string &args_json) {
+void Tracer::beginSectionImpl(const std::string &category,
+                              const std::string &name,
+                              const std::string &args_json,
+                              bool c_api_owned,
+                              uint64_t c_api_handle) {
   const std::string event_name = buildEventName(category, name, args_json);
+  SectionFrame frame;
+  frame.c_api_owned = c_api_owned;
+  frame.c_api_handle = c_api_handle;
 
 #if RN_PERFETTO_WITH_SDK
-  uint64_t section_track_id = 0;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    section_track_id = next_section_track_id_++;
-    active_section_track_ids_.push_back(section_track_id);
-  }
+  ensurePerfettoInitialized(false);
 
+  frame.sdk_track_id = nextNonZeroHandle(g_next_sdk_section_track_id);
   TRACE_EVENT_BEGIN("react-native.native",
                     perfetto::DynamicString(event_name.c_str()),
-                    perfetto::Track(section_track_id));
+                    perfetto::Track(frame.sdk_track_id));
 #endif
 
 #if defined(__ANDROID__)
   ATrace_beginSection(event_name.c_str());
 #elif defined(__APPLE__) && TARGET_OS_IOS
   auto *signpost_log = reinterpret_cast<os_log_t>(signpost_log_);
-  const auto signpost_id = os_signpost_id_generate(signpost_log);
+  frame.signpost_id = os_signpost_id_generate(signpost_log);
 
   os_signpost_interval_begin(signpost_log,
-                             signpost_id,
+                             frame.signpost_id,
                              "RNPerfettoSection",
                              "%{public}s",
                              event_name.c_str());
-
-  g_signpost_stack.push_back(signpost_id);
 #endif
+
+  g_section_stack.push_back(frame);
 }
 
-void Tracer::EndSection() {
-#if RN_PERFETTO_WITH_SDK
-  uint64_t section_track_id = 0;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!active_section_track_ids_.empty()) {
-      section_track_id = active_section_track_ids_.back();
-      active_section_track_ids_.pop_back();
-    }
+bool Tracer::endSectionImpl(SectionClosePolicy close_policy,
+                            uint64_t required_c_api_handle) {
+  if (g_section_stack.empty()) {
+    return false;
   }
 
-  if (section_track_id != 0) {
-    TRACE_EVENT_END("react-native.native", perfetto::Track(section_track_id));
+  const SectionFrame &active_frame = g_section_stack.back();
+  if (close_policy == SectionClosePolicy::CApiOnly &&
+      !active_frame.c_api_owned) {
+    return false;
+  }
+
+  if (close_policy == SectionClosePolicy::CppOnly && active_frame.c_api_owned) {
+    return false;
+  }
+
+  if (required_c_api_handle != 0 &&
+      active_frame.c_api_handle != required_c_api_handle) {
+    return false;
+  }
+
+  const SectionFrame frame = active_frame;
+  (void)frame;
+
+#if RN_PERFETTO_WITH_SDK
+  if (frame.sdk_track_id != 0) {
+    TRACE_EVENT_END("react-native.native", perfetto::Track(frame.sdk_track_id));
   }
 #endif
 
 #if defined(__ANDROID__)
   ATrace_endSection();
 #elif defined(__APPLE__) && TARGET_OS_IOS
-  if (g_signpost_stack.empty()) {
-    return;
+  if (frame.signpost_id != OS_SIGNPOST_ID_NULL) {
+    auto *signpost_log = reinterpret_cast<os_log_t>(signpost_log_);
+    os_signpost_interval_end(signpost_log, frame.signpost_id, "RNPerfettoSection");
+  }
+#endif
+
+  g_section_stack.pop_back();
+  return true;
+}
+
+void Tracer::BeginSection(const std::string &category,
+                          const std::string &name,
+                          const std::string &args_json) {
+  beginSectionImpl(category, name, args_json, false, 0);
+}
+
+uint64_t Tracer::BeginSectionFromCApi(const std::string &category,
+                                      const std::string &name,
+                                      const std::string &args_json) {
+  const uint64_t c_api_handle = nextNonZeroHandle(g_next_c_api_section_handle);
+  beginSectionImpl(category, name, args_json, true, c_api_handle);
+  return c_api_handle;
+}
+
+void Tracer::EndSection() {
+  (void)endSectionImpl(SectionClosePolicy::CppOnly, 0);
+}
+
+bool Tracer::EndLastSectionFromCApi() {
+  return endSectionImpl(SectionClosePolicy::CApiOnly, 0);
+}
+
+bool Tracer::EndSectionFromCApi(uint64_t handle) {
+  if (handle == 0) {
+    return false;
   }
 
-  auto *signpost_log = reinterpret_cast<os_log_t>(signpost_log_);
-  const auto signpost_id = g_signpost_stack.back();
-  g_signpost_stack.pop_back();
-
-  os_signpost_interval_end(signpost_log, signpost_id, "RNPerfettoSection");
-#endif
+  return endSectionImpl(SectionClosePolicy::CApiOnly, handle);
 }
 
 void Tracer::InstantEvent(const std::string &category,
@@ -317,6 +412,8 @@ void Tracer::InstantEvent(const std::string &category,
   const std::string event_name = buildEventName(category, name, args_json);
 
 #if RN_PERFETTO_WITH_SDK
+  ensurePerfettoInitialized(false);
+
   TRACE_EVENT_INSTANT("react-native.native",
                       perfetto::DynamicString(event_name.c_str()));
 #endif
@@ -333,8 +430,11 @@ void Tracer::SetCounter(const std::string &category,
                         double value,
                         const std::string &args_json) {
   const auto counter_name = buildEventName(category, name, args_json);
+  (void)value;
 
 #if RN_PERFETTO_WITH_SDK
+  ensurePerfettoInitialized(false);
+
   TRACE_COUNTER("react-native.native",
                 perfetto::DynamicString(counter_name.c_str()),
                 static_cast<int64_t>(std::llround(value)));
@@ -350,18 +450,14 @@ void Tracer::SetCounter(const std::string &category,
 
 #if RN_PERFETTO_WITH_SDK
 void Tracer::ensurePerfettoInitialized(bool enable_system_backend) {
-  if (perfetto_initialized_) {
-    return;
-  }
+  std::call_once(perfetto_initialize_once_, [enable_system_backend]() {
+    perfetto::TracingInitArgs init_args;
+    (void)enable_system_backend;
+    init_args.backends = perfetto::kInProcessBackend | perfetto::kSystemBackend;
 
-  perfetto::TracingInitArgs init_args;
-  (void)enable_system_backend;
-  init_args.backends = perfetto::kInProcessBackend | perfetto::kSystemBackend;
-
-  perfetto::Tracing::Initialize(init_args);
-  perfetto::TrackEvent::Register();
-
-  perfetto_initialized_ = true;
+    perfetto::Tracing::Initialize(init_args);
+    perfetto::TrackEvent::Register();
+  });
 }
 #endif
 
