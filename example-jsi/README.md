@@ -18,7 +18,7 @@ Tracing is an internal implementation detail inside C++ and is not exposed throu
   - Android: `example-jsi/android/app/src/main/java/perfetto/example/utilities/AppUtilitiesInstallerModule.kt` + JNI glue.
   - iOS: `example-jsi/ios/PerfettoExample/AppUtilitiesInstaller.mm`.
 - C++ implementation: `example-jsi/cpp/AppUtilitiesJSI.cpp`.
-- Shared tracer dependency: `react_native_perfetto::Tracer` from `cpp/ReactNativePerfettoTracer.*`.
+- Shared tracer dependency boundary: C ABI from `cpp/include/rnperfetto/tracer.h` (`rnpt_*` API).
 
 ## Design Decisions
 
@@ -93,4 +93,4 @@ Notes:
 
 - The app installs bindings through a tiny native installer module.
 - Utility host functions are implemented in `example-jsi/cpp/AppUtilitiesJSI.cpp`.
-- Internal tracing uses `react_native_perfetto::Tracer` from the shared C++ wrapper.
+- Internal tracing calls the `rnpt_*` C ABI and links against the shared `reactnativeperfetto` library.

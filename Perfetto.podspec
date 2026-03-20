@@ -14,7 +14,9 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/jayshah/react-native-perfetto.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm}", "cpp/**/*.{h,hpp,c,cc,cpp}"
-  s.private_header_files = "ios/**/*.h", "cpp/**/*.{h,hpp}"
+  s.public_header_files = "cpp/include/rnperfetto/tracer.h"
+  s.private_header_files = "ios/**/*.h", "cpp/ReactNativePerfettoTracer.h"
+  s.header_mappings_dir = "cpp/include"
 
   s.pod_target_xcconfig = {
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",

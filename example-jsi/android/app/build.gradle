@@ -112,6 +112,10 @@ android {
         }
     }
 
+    buildFeatures {
+        prefab true
+    }
+
     externalNativeBuild {
         cmake {
             path "src/main/jni/CMakeLists.txt"

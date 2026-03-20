@@ -1,6 +1,7 @@
 #include "AppUtilitiesJSI.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cctype>
 #include <cstdint>
@@ -12,21 +13,54 @@
 #include <stdexcept>
 #include <string>
 
-#include "../../cpp/ReactNativePerfettoTracer.h"
+#include "rnperfetto/tracer.h"
 
 namespace app_utilities {
 
 namespace {
 
 constexpr const char *kTelemetryCategory = "app.runtime.utilities";
+constexpr size_t kCAbiErrorBufferSize = 1024;
+constexpr size_t kCAbiPathBufferSize = 4096;
+
+std::string statusToString(rnpt_status_t status) {
+  switch (status) {
+    case RNPT_STATUS_OK:
+      return "ok";
+    case RNPT_STATUS_INVALID_ARGUMENT:
+      return "invalid_argument";
+    case RNPT_STATUS_FAILED_PRECONDITION:
+      return "failed_precondition";
+    case RNPT_STATUS_UNSUPPORTED:
+      return "unsupported";
+    case RNPT_STATUS_INTERNAL:
+      return "internal";
+  }
+
+  return "unknown";
+}
+
+template <size_t N>
+std::string readBufferString(const std::array<char, N> &buffer, size_t length) {
+  if (N == 0) {
+    return "";
+  }
+  const size_t bounded_length = std::min(length, N - 1);
+  return std::string(buffer.data(), bounded_length);
+}
 
 class ScopedOperation {
  public:
   explicit ScopedOperation(std::string operation_name)
       : operation_name_(std::move(operation_name)),
         start_(std::chrono::steady_clock::now()) {
-    react_native_perfetto::Tracer::Get().BeginSection(
-        kTelemetryCategory, operation_name_, "");
+    const rnpt_status_t status =
+        rnpt_begin_section(kTelemetryCategory,
+                           operation_name_.c_str(),
+                           "",
+                           &section_handle_);
+    section_open_ =
+        status == RNPT_STATUS_OK && section_handle_ != RNPT_INVALID_SECTION_HANDLE;
   }
 
   ~ScopedOperation() {
@@ -35,24 +69,27 @@ class ScopedOperation {
             std::chrono::steady_clock::now() - start_)
             .count();
 
-    react_native_perfetto::Tracer::Get().SetCounter(
-        kTelemetryCategory,
-        operation_name_ + ".duration_us",
-        static_cast<double>(elapsed),
-        "");
-    react_native_perfetto::Tracer::Get().EndSection();
+    const std::string counter_name = operation_name_ + ".duration_us";
+    (void)rnpt_set_counter(kTelemetryCategory,
+                           counter_name.c_str(),
+                           static_cast<double>(elapsed),
+                           "");
+    if (section_open_) {
+      (void)rnpt_end_section(section_handle_);
+    }
   }
 
   void markFailure(const std::string &reason) {
-    react_native_perfetto::Tracer::Get().InstantEvent(
-        kTelemetryCategory,
-        operation_name_ + ".failure",
-        reason);
+    const std::string event_name = operation_name_ + ".failure";
+    (void)rnpt_instant_event(
+        kTelemetryCategory, event_name.c_str(), reason.c_str());
   }
 
  private:
   std::string operation_name_;
   std::chrono::steady_clock::time_point start_;
+  rnpt_section_handle_t section_handle_ = RNPT_INVALID_SECTION_HANDLE;
+  bool section_open_ = false;
 };
 
 struct BindingState {
@@ -357,20 +394,39 @@ facebook::jsi::Function makeCaptureTraceFunction(
               const facebook::jsi::Value &,
               const facebook::jsi::Value *,
               size_t) -> facebook::jsi::Value {
-        auto &tracer = react_native_perfetto::Tracer::Get();
-        if (!tracer.IsPerfettoSdkAvailable()) {
+        uint8_t is_available = 0;
+        const rnpt_status_t availability_status =
+            rnpt_is_sdk_available(&is_available);
+        if (availability_status != RNPT_STATUS_OK) {
+          throwJsiError(runtime,
+                        "Unable to check diagnostics availability (" +
+                            statusToString(availability_status) + ").");
+        }
+        if (is_available == 0) {
           throwJsiError(runtime, "Diagnostics capture is unavailable.");
         }
 
-        react_native_perfetto::RecordingConfig config;
-        config.enable_in_process_backend = true;
-        config.enable_system_backend = false;
+        rnpt_recording_config_v1 config{};
+        config.struct_size = sizeof(config);
+        config.file_path = nullptr;
+        config.buffer_size_kb = 4 * 1024;
+        config.duration_ms = 0;
+        config.backend_mask = RNPT_BACKEND_IN_PROCESS;
 
-        std::string start_error;
-        if (!tracer.StartRecording(config, &start_error)) {
+        std::array<char, kCAbiErrorBufferSize> start_error_buffer{};
+        size_t start_error_length = 0;
+        const rnpt_status_t start_status =
+            rnpt_start_recording(&config,
+                                 start_error_buffer.data(),
+                                 start_error_buffer.size(),
+                                 &start_error_length);
+        if (start_status != RNPT_STATUS_OK) {
+          const std::string start_error =
+              readBufferString(start_error_buffer, start_error_length);
           throwJsiError(runtime,
                         start_error.empty()
-                            ? "Unable to start diagnostics capture."
+                            ? "Unable to start diagnostics capture (" +
+                                  statusToString(start_status) + ")."
                             : start_error);
         }
 
@@ -432,19 +488,44 @@ facebook::jsi::Function makeCaptureTraceFunction(
             }
           }
         } catch (...) {
-          std::string ignored_output_path;
-          std::string ignored_error;
-          tracer.StopRecording(&ignored_output_path, &ignored_error);
+          std::array<char, kCAbiPathBufferSize> ignored_output_path{};
+          std::array<char, kCAbiErrorBufferSize> ignored_error{};
+          size_t ignored_output_path_length = 0;
+          size_t ignored_error_length = 0;
+          (void)rnpt_stop_recording(ignored_output_path.data(),
+                                    ignored_output_path.size(),
+                                    &ignored_output_path_length,
+                                    ignored_error.data(),
+                                    ignored_error.size(),
+                                    &ignored_error_length);
           throw;
         }
 
-        std::string trace_path;
-        std::string stop_error;
-        if (!tracer.StopRecording(&trace_path, &stop_error)) {
+        std::array<char, kCAbiPathBufferSize> output_path_buffer{};
+        size_t output_path_length = 0;
+        std::array<char, kCAbiErrorBufferSize> stop_error_buffer{};
+        size_t stop_error_length = 0;
+        const rnpt_status_t stop_status =
+            rnpt_stop_recording(output_path_buffer.data(),
+                                output_path_buffer.size(),
+                                &output_path_length,
+                                stop_error_buffer.data(),
+                                stop_error_buffer.size(),
+                                &stop_error_length);
+        if (stop_status != RNPT_STATUS_OK) {
+          const std::string stop_error =
+              readBufferString(stop_error_buffer, stop_error_length);
           throwJsiError(runtime,
                         stop_error.empty()
-                            ? "Unable to stop diagnostics capture."
+                            ? "Unable to stop diagnostics capture (" +
+                                  statusToString(stop_status) + ")."
                             : stop_error);
+        }
+
+        const std::string trace_path =
+            readBufferString(output_path_buffer, output_path_length);
+        if (trace_path.empty()) {
+          throwJsiError(runtime, "Diagnostics capture finished with an empty output path.");
         }
 
         return facebook::jsi::String::createFromUtf8(runtime, trace_path);
@@ -489,10 +570,7 @@ void InstallAppUtilities(facebook::jsi::Runtime &runtime,
 
   global.setProperty(runtime, "__appUtilities", std::move(utilities));
 
-  react_native_perfetto::Tracer::Get().InstantEvent(
-      kTelemetryCategory,
-      "utils.install.complete",
-      "");
+  (void)rnpt_instant_event(kTelemetryCategory, "utils.install.complete", "");
 }
 
 } // namespace app_utilities
