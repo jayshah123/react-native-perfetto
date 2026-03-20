@@ -9,24 +9,7 @@ Perfetto-first tracing for React Native apps with a typed JS/TS API, dual-archit
 - First-class manual section lifecycle via `beginSection(...)` / `endSection(...)`.
 - Flat scalar args support for events/counters/sections.
 - Dual-architecture bridge support for Android/iOS: TurboModule (New Architecture) and legacy NativeModule bridge (Old Architecture).
-- Shared C++ tracer surface with a C-compatible wrapper for non-JS/native-host use cases.
 - Compatibility wrappers for the previous global API.
-
-## Big-Picture Use Cases
-
-- Add low-overhead product instrumentation (startup, navigation, API latency, expensive compute) in React Native with trace files that can be inspected in Perfetto UI.
-- Run repeatable end-to-end capture + verification in CI-style workflows using Maestro (capture) and Playwright SQL checks in Perfetto UI (verify expected slices and duration bounds).
-- Trace across multiple runtimes by bridging WebView JavaScript events into the same RN session.
-- Keep tracing fully internal for app-owned native utility modules while exposing only domain APIs to JavaScript (the `example-jsi` pattern).
-- Reuse the native tracer from C/C++ entry points without routing through JS APIs when integrating in host-native layers.
-
-## Key Design Decisions
-
-- Session-first API (`startRecording` -> `TraceSession`) is the primary contract; wrappers are compatibility lanes, not the long-term architecture.
-- `beginSection(...)` / `endSection(...)` are first-class and enforce strict LIFO semantics to match native tracing behavior and prevent JS/native stack drift.
-- Shared C++ tracer logic is the source of truth, with Android/iOS bridges kept intentionally thin.
-- App-owned utility JSI modules should keep tracing as an internal implementation detail, rather than exposing tracing primitives on app-level JS surfaces.
-- Android release builds are intentionally non-debuggable in production-like configs, so `run-as`-based trace pulls are debug-only unless rooted-device strategies are used.
 
 ## Installation
 
@@ -144,24 +127,6 @@ Use this when the host app is not RN but you still want compatible WebView messa
 - Docs:
   - `docs/webview-wire-protocol.md`
   - `docs/webview-tracing-api.md` (`Non-RN Reuse` section)
-
-### Path D: App-Owned Utility JSI Module (Tracing Hidden Internally)
-
-Use this when you want to keep tracing as an implementation detail inside native C++ while exposing a domain-focused utility API to JS.
-
-- Example workspace app: `example-jsi`
-- Run:
-  - `yarn example:jsi start`
-  - `yarn example:jsi android`
-  - `yarn example:jsi ios`
-
-### Path E: Native Host Integration Through C API
-
-Use this when you need to call tracing from C/C++ host layers directly.
-
-- Public C/C++ surface: `cpp/include/rnperfetto/tracer.h`
-- C API implementation: `cpp/tracer_c_api.cpp`
-- Keep this path focused on host-native integration boundaries; do not expand the public JS API solely to satisfy native-only use cases.
 
 ## Usage patterns
 
@@ -366,12 +331,6 @@ Preconditions:
    - `perfetto.example` (main example app)
    - `com.perfettolegacyexample` (legacy RN 0.75 app)
 
-Important operational notes:
-
-- `maestro:test:*` scripts in `package.json` are Android-default unless explicitly prefixed with `MAESTRO_PLATFORM=ios`.
-- `example` and `example-jsi` both use `perfetto.example`, so reinstall the intended app before each flow when switching between them.
-- `trace:pull:android` uses `run-as` and works for debuggable builds; for release verification use a rooted emulator/device and pull from `/data/user/0/<appId>/cache/rn-perfetto-*.perfetto-trace`.
-
 Install Maestro CLI:
 
 ```sh
@@ -386,8 +345,6 @@ yarn maestro:test:capture-trace
 yarn maestro:test:capture-trace:legacy
 # or WebView bridge scenario
 yarn maestro:test:capture-webview-trace
-# or app-owned utility JSI scenario
-yarn maestro:test:capture-app-utilities-trace
 ```
 
 Flow files:
@@ -395,7 +352,6 @@ Flow files:
 - `/.maestro/capture-trace.yaml`
 - `/.maestro/capture-trace-legacy.yaml`
 - `/.maestro/capture-webview-trace.yaml`
-- `/.maestro/capture-app-utilities-trace.yaml`
 
 Android Maestro scripts use `MAESTRO_PLATFORM=android` and auto-select a single connected ADB device to avoid interactive device prompts.
 
@@ -450,12 +406,6 @@ Verify custom section substrings:
 yarn playwright:test:verify-trace -- --event withRecording-demo --event manual-synthetic-work
 ```
 
-Verify the app-utilities JSI flow event set:
-
-```sh
-yarn playwright:test:verify-app-utilities-trace
-```
-
 Verify the 1s busy-loop slice duration (expects `busy-loop-1s` max duration
 between 900ms and 1500ms):
 
@@ -467,12 +417,6 @@ Run 1s busy-loop capture + pull + duration verification in one command:
 
 ```sh
 yarn maestro:test:capture-and-verify-busy-loop-1s
-```
-
-Run app-utilities capture + pull + verification in one command:
-
-```sh
-yarn maestro:test:capture-and-verify-app-utilities-trace
 ```
 
 Run the iOS simulator variant:
