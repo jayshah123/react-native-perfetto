@@ -9,9 +9,7 @@ mkdir -p .test-dist/cpp
   -Wextra \
   -DRN_PERFETTO_WITH_SDK=0 \
   -Icpp \
-  -Icpp/include \
   cpp/ReactNativePerfettoTracer.cpp \
-  cpp/tracer_c_api.cpp \
   cpp/tests/ReactNativePerfettoTracer.test.cpp \
   -o .test-dist/cpp/reactnativeperfetto-tracer-test
 
@@ -25,9 +23,7 @@ if [ -f cpp/third_party/perfetto/sdk/perfetto.cc ]; then
     -Wall \
     -Wextra \
     -Icpp \
-    -Icpp/include \
     cpp/ReactNativePerfettoTracer.cpp \
-    cpp/tracer_c_api.cpp \
     cpp/third_party/perfetto/sdk/perfetto.cc \
     cpp/tests/ReactNativePerfettoTracerSdk.test.cpp \
     -pthread \
@@ -54,9 +50,6 @@ if [ -f cpp/third_party/perfetto/sdk/perfetto.cc ]; then
     TRACE_PROCESSOR_BIN="$TP_BIN" python3 scripts/verify-trace-sql.py \
       /tmp/rn-perfetto-sdk-test.perfetto-trace \
       --event sdk-event --arg phase=run --category test.category
-    TRACE_PROCESSOR_BIN="$TP_BIN" python3 scripts/verify-trace-sql.py \
-      /tmp/rn-perfetto-sdk-test.perfetto-trace \
-      --event c-api-section --arg origin=c-abi --category test.category
     TRACE_PROCESSOR_BIN="$TP_BIN" python3 scripts/verify-trace-sql.py \
       /tmp/rn-perfetto-sdk-test.perfetto-trace \
       --counter sdk-counter=7.5

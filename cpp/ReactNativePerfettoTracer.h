@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -55,26 +54,14 @@ struct RecordingConfig {
   bool enable_system_backend = false;
 };
 
-enum class OperationStatus {
-  Ok,
-  AlreadyRunning,
-  NoActiveSession,
-  Unsupported,
-  Internal,
-};
-
 class Tracer {
  public:
   static Tracer &Get();
 
   bool IsPerfettoSdkAvailable() const;
 
-  bool StartRecording(const RecordingConfig &config,
-                      std::string *error,
-                      OperationStatus *status = nullptr);
-  bool StopRecording(std::string *output_path,
-                     std::string *error,
-                     OperationStatus *status = nullptr);
+  bool StartRecording(const RecordingConfig &config, std::string *error);
+  bool StopRecording(std::string *output_path, std::string *error);
 
   void BeginSection(const std::string &category,
                     const std::string &name,
@@ -88,21 +75,7 @@ class Tracer {
                   double value,
                   const std::string &args_json);
 
-  // C ABI helpers: these enforce same-thread LIFO semantics and only close
-  // sections created through the C API surface.
-  uint64_t BeginSectionFromCApi(const std::string &category,
-                                const std::string &name,
-                                const std::string &args_json);
-  bool EndLastSectionFromCApi();
-  bool EndSectionFromCApi(uint64_t handle);
-
  private:
-  enum class SectionClosePolicy {
-    Any,
-    CApiOnly,
-    CppOnly,
-  };
-
   Tracer();
 
   Tracer(const Tracer &) = delete;
@@ -114,13 +87,6 @@ class Tracer {
   std::string buildEventName(const std::string &category,
                              const std::string &name,
                              const std::string &args_json) const;
-  void beginSectionImpl(const std::string &category,
-                        const std::string &name,
-                        const std::string &args_json,
-                        bool c_api_owned,
-                        uint64_t c_api_handle);
-  bool endSectionImpl(SectionClosePolicy close_policy,
-                      uint64_t required_c_api_handle);
 
 #if RN_PERFETTO_WITH_SDK
   void ensurePerfettoInitialized(bool enable_system_backend);
@@ -130,7 +96,7 @@ class Tracer {
   bool recording_ = false;
 
 #if RN_PERFETTO_WITH_SDK
-  std::once_flag perfetto_initialize_once_;
+  bool perfetto_initialized_ = false;
   std::unique_ptr<perfetto::TracingSession> tracing_session_;
 #endif
 

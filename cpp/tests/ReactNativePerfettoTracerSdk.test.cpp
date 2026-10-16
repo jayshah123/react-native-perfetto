@@ -3,7 +3,6 @@
 // ReactNativePerfettoTracer.test.cpp which covers the no-SDK path.
 
 #include "ReactNativePerfettoTracer.h"
-#include "rnperfetto/tracer.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -109,15 +108,6 @@ int main() {
   tracer.InstantEvent("test.category", "sdk-bad-args", "{not valid json");
   tracer.SetCounter("test.category", "sdk-counter", 7.5, "");
 
-  rnpt_section_handle_t c_section = RNPT_INVALID_SECTION_HANDLE;
-  expect(rnpt_begin_section("test.category",
-                            "c-api-section",
-                            "{\"origin\":\"c-abi\"}",
-                            &c_section) == RNPT_STATUS_OK,
-         "rnpt_begin_section should open a section under the SDK.");
-  expect(rnpt_end_section(c_section) == RNPT_STATUS_OK,
-         "rnpt_end_section should close the C API section.");
-
   std::string output_path;
   std::string stop_error;
   expect(tracer.StopRecording(&output_path, &stop_error),
@@ -147,10 +137,6 @@ int main() {
          "Instant event arg key should be stored as a debug annotation.");
   expect(containsBytes(trace, "run"),
          "Instant event arg value should be stored in the trace.");
-  expect(containsBytes(trace, "origin"),
-         "C API section arg key should be stored as a debug annotation.");
-  expect(containsBytes(trace, "c-abi"),
-         "C API section arg value should be stored in the trace.");
   expect(containsBytes(trace, "parse_error"),
          "Malformed args JSON should surface a parse_error debug annotation.");
 
