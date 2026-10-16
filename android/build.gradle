@@ -61,13 +61,6 @@ android {
 
   buildFeatures {
     buildConfig true
-    prefabPublishing true
-  }
-
-  prefab {
-    reactnativeperfetto {
-      headers "../cpp/include"
-    }
   }
 
   sourceSets {
