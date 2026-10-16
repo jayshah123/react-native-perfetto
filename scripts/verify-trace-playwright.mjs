@@ -10,14 +10,19 @@ const DEFAULT_TRACE_DIR = path.join(process.cwd(), 'output', 'playwright');
 
 function printUsage() {
   console.log(`Usage:
-  node scripts/verify-trace-playwright.mjs [trace-file] [--event <substring>] [--trace <trace-file>] [--min-dur-ms <ms>] [--max-dur-ms <ms>] [--headed] [--keep-open]
+  node scripts/verify-trace-playwright.mjs [trace-file] [--event <substring>] [--trace <trace-file>] [--min-dur-ms <ms>] [--max-dur-ms <ms>] [--arg <key=value>] [--headed] [--keep-open]
 
 Examples:
   node scripts/verify-trace-playwright.mjs
   node scripts/verify-trace-playwright.mjs output/playwright/trace.perfetto-trace
   node scripts/verify-trace-playwright.mjs --event withRecording-demo --event manual-synthetic-work
   node scripts/verify-trace-playwright.mjs --event busy-loop-1s --min-dur-ms 900 --max-dur-ms 1500
+  node scripts/verify-trace-playwright.mjs --event busy-loop-1s --arg source=busy-loop-button --arg duration_ms=1000
   node scripts/verify-trace-playwright.mjs --headed --keep-open
+
+Options:
+  --arg <key=value>  Require each matched slice to carry a debug annotation
+                     with this key and display value (repeatable).
 `);
 }
 
@@ -45,6 +50,7 @@ function parseArgs(argv) {
   const options = {
     tracePath: null,
     eventSubstrings: [],
+    argFilters: [],
     minDurMs: null,
     maxDurMs: null,
     headed: false,
@@ -79,6 +85,27 @@ function parseArgs(argv) {
         throw new Error('Missing value for --event.');
       }
       options.eventSubstrings.push(value);
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--arg') {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error('Missing value for --arg.');
+      }
+
+      const separatorIndex = value.indexOf('=');
+      if (separatorIndex <= 0) {
+        throw new Error(
+          `Invalid --arg value: "${value}". Expected <key>=<value>.`
+        );
+      }
+
+      options.argFilters.push({
+        key: value.slice(0, separatorIndex),
+        value: value.slice(separatorIndex + 1),
+      });
       i += 1;
       continue;
     }
@@ -289,7 +316,29 @@ async function verifyTraceSections(page, options) {
       }
     }
 
-    results.push({ eventSubstring, matchingSections, maxDurationMs });
+    const verifiedArgs = [];
+    for (const argFilter of options.argFilters) {
+      const argSql = `
+        SELECT COUNT(*) AS matching_args
+        FROM slice s
+        JOIN args a ON a.arg_set_id = s.arg_set_id
+        WHERE s.name LIKE ${sqlStringLiteral(`%${eventSubstring}%`)}
+          AND a.key IN (
+            ${sqlStringLiteral(argFilter.key)},
+            ${sqlStringLiteral(`debug.${argFilter.key}`)})
+          AND a.display_value = ${sqlStringLiteral(argFilter.value)};
+      `;
+
+      const matchingArgs = await runNumericQuery(page, argSql);
+      if (matchingArgs < 1) {
+        throw new Error(
+          `No structured debug annotation ${argFilter.key}=${argFilter.value} found on slices matching "${eventSubstring}".`
+        );
+      }
+      verifiedArgs.push(argFilter);
+    }
+
+    results.push({ eventSubstring, matchingSections, maxDurationMs, verifiedArgs });
   }
 
   return results;
@@ -342,6 +391,11 @@ async function main() {
 
   console.log(`Trace file: ${options.tracePath}`);
   console.log(`Expected section substrings: ${options.eventSubstrings.join(', ')}`);
+  if (options.argFilters.length > 0) {
+    console.log(
+      `Required args: ${options.argFilters.map((f) => `${f.key}=${f.value}`).join(', ')}`
+    );
+  }
   if (options.minDurMs !== null || options.maxDurMs !== null) {
     console.log(
       `Duration bounds: min=${options.minDurMs ?? 'none'} ms, max=${options.maxDurMs ?? 'none'} ms`
@@ -367,8 +421,12 @@ async function main() {
         result.maxDurationMs === null
           ? ''
           : `; max duration ${result.maxDurationMs.toFixed(2)} ms`;
+      const argsText =
+        result.verifiedArgs.length === 0
+          ? ''
+          : `; verified args ${result.verifiedArgs.map((f) => `${f.key}=${f.value}`).join(', ')}`;
       console.log(
-        `Verified section "${result.eventSubstring}" with ${result.matchingSections} matching completed slice(s)${durationText}.`
+        `Verified section "${result.eventSubstring}" with ${result.matchingSections} matching completed slice(s)${durationText}${argsText}.`
       );
     }
 

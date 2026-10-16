@@ -59,6 +59,12 @@ rnpt_stop_recording(char *output_path_buffer,
                     size_t error_buffer_capacity,
                     size_t *error_buffer_length);
 
+// |args_json| is a flat JSON object ({"key": value, ...} where value is
+// string | number | boolean | null). With the Perfetto SDK bundled, each
+// key/value becomes a typed debug annotation on the slice named
+// "<category>:<name>"; malformed JSON produces a "parse_error" annotation.
+// On platform-fallback paths (ATrace/signpost) it is appended to the
+// flattened "<category>:<name>|args=<json>" name instead.
 RNPT_EXPORT rnpt_status_t rnpt_begin_section(const char *category,
                                              const char *name,
                                              const char *args_json,

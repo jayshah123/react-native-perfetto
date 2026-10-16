@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #if !defined(RN_PERFETTO_WITH_SDK)
 #if __has_include("third_party/perfetto/sdk/perfetto.h")
@@ -19,6 +20,32 @@
 #endif
 
 namespace react_native_perfetto {
+
+struct TraceArgValue {
+  enum class Type {
+    Null,
+    Bool,
+    Int,
+    Double,
+    String,
+  };
+
+  Type type = Type::Null;
+  bool bool_value = false;
+  int64_t int_value = 0;
+  double double_value = 0;
+  std::string string_value;
+};
+
+struct TraceArg {
+  std::string key;
+  TraceArgValue value;
+};
+
+// Parses a flat JSON object produced by the JS layer ({"key": value, ...} where
+// value is string | number | boolean | null) into typed trace arguments.
+// Returns an empty list for empty or malformed input.
+std::vector<TraceArg> ParseTraceArgsJson(const std::string &args_json);
 
 struct RecordingConfig {
   std::string file_path;
@@ -82,6 +109,8 @@ class Tracer {
   Tracer &operator=(const Tracer &) = delete;
 
   std::string resolveOutputPath(const std::string &requested_path) const;
+  std::string buildSliceName(const std::string &category,
+                             const std::string &name) const;
   std::string buildEventName(const std::string &category,
                              const std::string &name,
                              const std::string &args_json) const;

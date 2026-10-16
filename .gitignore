@@ -91,6 +91,8 @@ nitrogen/
 .playwright-cli/
 .test-dist/
 output/
+graphify-out/
+.tools/
 example/ios/PerfettoExample.xcworkspace/
 example/ios/Podfile.lock
 example/Gemfile.lock

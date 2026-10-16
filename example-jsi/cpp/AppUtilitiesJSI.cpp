@@ -81,8 +81,10 @@ class ScopedOperation {
 
   void markFailure(const std::string &reason) {
     const std::string event_name = operation_name_ + ".failure";
+    const std::string args_json =
+        std::string("{\"reason\":\"") + reason + "\"}";
     (void)rnpt_instant_event(
-        kTelemetryCategory, event_name.c_str(), reason.c_str());
+        kTelemetryCategory, event_name.c_str(), args_json.c_str());
   }
 
  private:

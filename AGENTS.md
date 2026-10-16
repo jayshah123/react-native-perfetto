@@ -31,6 +31,9 @@ The public API is session-first (`startRecording` -> `TraceSession`) with first-
 - If SDK files are absent:
   - section/event/counter APIs still work through platform facilities.
   - `startRecording` and `TraceSession.stop()` intentionally return errors.
+- SDK emission semantics (see "Trace Payload Semantics" in `docs/cpp-public-api.md`):
+  - slice names are `<category>:<name>`; args are typed debug annotations; user categories are emitted via `perfetto::DynamicCategory` with `enabled_categories("*")`; sections nest on the default thread track; counters use `perfetto::CounterTrack`.
+  - ATrace/signpost fallbacks keep the flattened `<category>:<name>|args=<json>` string since they cannot carry structured metadata.
 
 ## Engineering rules
 
@@ -82,6 +85,7 @@ The public API is session-first (`startRecording` -> `TraceSession`) with first-
 - Verify busy-loop duration bounds: `yarn playwright:test:verify-busy-loop-1s`
 - Verify WebView trace slices: `yarn playwright:test:verify-webview-trace`
 - Verify app-utilities slices: `yarn playwright:test:verify-app-utilities-trace`
+- Browser-free SQL verification: `yarn trace-processor:fetch` once, then `yarn sql:test:verify-*` (same assertions plus `--category`/`--counter` via `scripts/verify-trace-sql.py`). `scripts/test-cpp.sh` uses it automatically when present.
 
 ## Common pitfalls
 
