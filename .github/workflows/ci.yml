@@ -165,7 +165,6 @@ jobs:
       - name: Prepare iOS xcresult directories
         run: |
           mkdir -p example/ios/build
-          mkdir -p example-jsi/ios/build
           mkdir -p example-legacy/ios/build
 
       - name: Build example for iOS (verbose)
@@ -187,5 +186,4 @@ jobs:
           retention-days: 14
           path: |
             example/ios/build/*.xcresult
-            example-jsi/ios/build/*.xcresult
             example-legacy/ios/build/*.xcresult

@@ -83,19 +83,33 @@ Behavior:
 
 On failure, writes an error message to `error` when non-null.
 
+## Trace Payload Semantics
+
+Instrumentation uses two representations depending on the backend:
+
+- **Perfetto SDK path** (when the SDK is bundled):
+  - Slice/event name is `<category>:<name>` (stable — args are not embedded in the name).
+  - `category` is emitted as a real Perfetto category via `perfetto::DynamicCategory`; `StartRecording` enables `*` so arbitrary categories are captured.
+  - `args_json` is parsed and each top-level key/value is emitted as a typed debug annotation on the event (`string`, `int64_t`, `double`, `bool`; `null` is emitted as the string `"null"`). These are queryable via the `args` table / `extract_arg` in Perfetto SQL.
+  - Sections are emitted as `B`/`E` slices on the default thread track, so nested sections nest naturally in the UI.
+  - Counters are emitted on a `perfetto::CounterTrack` named `<category>:<name>` as double samples — a stable track per counter instead of one track per args combination. `TRACE_COUNTER` has no annotation slot, so counter args are only carried in the flattened fallback name today.
+  - Invalid/malformed `args_json` emits a `parse_error` debug annotation instead of the args.
+- **Platform fallback path** (Android `ATrace`, iOS `os_signpost`):
+  - These APIs only accept strings, so the flattened `<category>:<name>|args=<args_json>` name is still used there.
+- Empty category falls back to `react-native`.
+- Empty name falls back to `unnamed_event`.
+
 ## Module 2: Section Instrumentation
 
 ### `void BeginSection(const std::string& category, const std::string& name, const std::string& args_json)`
 
 - Emits a begin marker for a scoped interval.
-- Event name is composed as: `<category>:<name>|args=<args_json>` when args are present.
-- Empty category falls back to `react-native`.
-- Empty name falls back to `unnamed_event`.
+- Naming/annotation rules follow "Trace Payload Semantics" above.
 
 ### `void EndSection()`
 
 - Ends the most recent section (LIFO behavior in C++ tracking).
-- Safe to call even when there is no active Perfetto section id.
+- Safe to call even when there is no active section.
 
 Usage expectation:
 
@@ -106,22 +120,21 @@ Usage expectation:
 
 ### `void InstantEvent(const std::string& category, const std::string& name, const std::string& args_json)`
 
-- Emits a point-in-time event with the same event name composition rules as sections.
+- Emits a point-in-time event with the same naming/annotation rules as sections.
 
 ## Module 4: Counters
 
 ### `void SetCounter(const std::string& category, const std::string& name, double value, const std::string& args_json)`
 
 - Emits/updates a numeric counter event.
-- Counter value is rounded to `int64_t` for Perfetto/ATrace emission.
-- Uses same category/name/args naming rules as other events.
+- With the SDK the value is emitted as a double counter sample on a `perfetto::CounterTrack` named `<category>:<name>`; ATrace rounds it to `int64_t`.
 
 ## Platform Behavior Matrix
 
 ### When Perfetto SDK is bundled
 
 - `StartRecording` and `StopRecording`: fully supported.
-- `BeginSection` / `EndSection`, `InstantEvent`, `SetCounter`: emitted to Perfetto track-event APIs.
+- `BeginSection` / `EndSection`, `InstantEvent`, `SetCounter`: emitted to Perfetto track-event APIs with dynamic categories and typed debug annotations (see "Trace Payload Semantics").
 
 ### When Perfetto SDK is not bundled
 

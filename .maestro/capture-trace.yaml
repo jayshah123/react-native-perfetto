@@ -4,7 +4,9 @@ appId: perfetto.example
 - extendedWaitUntil:
     visible: "react-native-perfetto"
     timeout: 30000
-- assertVisible: "react-native-perfetto"
+- extendedWaitUntil:
+    visible: "react-native-perfetto"
+    timeout: 30000
 - assertVisible: "Perfetto SDK bundled: yes"
 - tapOn:
     id: "runWithRecordingDemoButton"

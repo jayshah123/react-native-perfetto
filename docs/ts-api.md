@@ -152,6 +152,7 @@ Related exports:
 - Name fallback: `unnamed_section`.
 - Category fallback: `react-native`.
 - Args are normalized, filtered, key-sorted, and JSON serialized.
+- With the Perfetto SDK bundled, slice names are `<category>:<name>` and args are emitted as typed debug annotations queryable via Perfetto SQL (`args` table / `extract_arg`). The flattened `|args=` suffix only remains on ATrace/signpost fallback paths, which cannot carry structured metadata.
 - End order is strict LIFO to match native Perfetto/ATrace semantics.
 - Out-of-order `section.end()` calls are ignored (dev warning) to avoid native stack desync.
 

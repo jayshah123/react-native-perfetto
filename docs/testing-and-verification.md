@@ -46,6 +46,7 @@ yarn playwright:test:verify-webview-trace
 - WebView section name: `webview-demo-section` (`example/src/App.tsx`)
 - WebView Maestro flow: `.maestro/capture-webview-trace.yaml`
 - Playwright verifier: `scripts/verify-trace-playwright.mjs`
+- Browser-free SQL verifier: `scripts/verify-trace-sql.py` (uses `trace_processor`; fetch once via `scripts/fetch-trace-processor.sh` / `yarn trace-processor:fetch` into `.tools/`)
 - Trace pull scripts:
   - Android: `scripts/pull-latest-android-trace.sh`
   - iOS: `scripts/pull-latest-ios-trace.sh`
@@ -283,3 +284,20 @@ yarn playwright:test:verify-busy-loop-1s -- --trace output/playwright/<file>.per
 ```sh
 SIM_UDID=<simulator-udid> yarn trace:pull:ios
 ```
+
+## Browser-free SQL verification
+
+`scripts/verify-trace-sql.py` runs the same slice/duration checks plus
+debug-annotation (`--arg`), category (`--category`), and counter
+(`--counter`) assertions directly through `trace_processor` — no browser or
+Perfetto UI required:
+
+```sh
+yarn trace-processor:fetch  # one-time: downloads trace_processor into .tools/
+yarn sql:test:verify-busy-loop-1s
+python3 scripts/verify-trace-sql.py <trace-file> \
+  --event busy-loop-1s --arg source=busy-loop-button --category react-native.example
+```
+
+`yarn test:cpp` automatically runs SQL verification on the SDK test trace
+when a `trace_processor` binary is available.

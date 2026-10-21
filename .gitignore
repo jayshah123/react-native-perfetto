@@ -89,6 +89,12 @@ nitrogen/
 .playwright-cli/
 .test-dist/
 output/
+graphify-out/
+.tools/
+logs_*.zip
 example/ios/PerfettoExample.xcworkspace/
 example/ios/Podfile.lock
 example/Gemfile.lock
+
+# Removed workspace kept only as local build artifacts on disk
+example-jsi/

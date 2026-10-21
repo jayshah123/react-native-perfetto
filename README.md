@@ -7,7 +7,7 @@ Perfetto-first tracing for React Native apps with a typed JS/TS API, dual-archit
 - Session-based tracing API for safe lifecycle management.
 - `withRecording` and `withSection` helpers that enforce `try/finally` semantics.
 - First-class manual section lifecycle via `beginSection(...)` / `endSection(...)`.
-- Flat scalar args support for events/counters/sections.
+- Flat scalar args support for events/counters/sections, emitted as typed Perfetto debug annotations (queryable via `args`/`extract_arg` in Perfetto SQL) with real per-event categories.
 - Dual-architecture bridge support for Android/iOS: TurboModule (New Architecture) and legacy NativeModule bridge (Old Architecture).
 - Compatibility wrappers for the previous global API.
 
@@ -412,6 +412,20 @@ between 900ms and 1500ms):
 ```sh
 yarn playwright:test:verify-busy-loop-1s
 ```
+
+Browser-free verification is also available via `trace_processor` SQL
+directly on the trace file (fetch the tool once, then verify):
+
+```sh
+yarn trace-processor:fetch
+yarn sql:test:verify-trace           # slice + debug-annotation checks
+yarn sql:test:verify-busy-loop-1s    # adds duration bounds
+yarn sql:test:verify-webview-trace   # WebView bridge flow
+```
+
+`scripts/verify-trace-sql.py` accepts `--event <substring>` (repeatable),
+`--arg <key=value>` (required debug annotation), `--category <name>`,
+`--counter <name-substring=value>`, and `--min-dur-ms`/`--max-dur-ms`.
 
 Run 1s busy-loop capture + pull + duration verification in one command:
 

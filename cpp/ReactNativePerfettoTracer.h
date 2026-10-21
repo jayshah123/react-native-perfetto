@@ -20,6 +20,32 @@
 
 namespace react_native_perfetto {
 
+struct TraceArgValue {
+  enum class Type {
+    Null,
+    Bool,
+    Int,
+    Double,
+    String,
+  };
+
+  Type type = Type::Null;
+  bool bool_value = false;
+  int64_t int_value = 0;
+  double double_value = 0;
+  std::string string_value;
+};
+
+struct TraceArg {
+  std::string key;
+  TraceArgValue value;
+};
+
+// Parses a flat JSON object produced by the JS layer ({"key": value, ...} where
+// value is string | number | boolean | null) into typed trace arguments.
+// Returns an empty list for empty or malformed input.
+std::vector<TraceArg> ParseTraceArgsJson(const std::string &args_json);
+
 struct RecordingConfig {
   std::string file_path;
   uint32_t buffer_size_kb = 4 * 1024;
@@ -56,6 +82,8 @@ class Tracer {
   Tracer &operator=(const Tracer &) = delete;
 
   std::string resolveOutputPath(const std::string &requested_path) const;
+  std::string buildSliceName(const std::string &category,
+                             const std::string &name) const;
   std::string buildEventName(const std::string &category,
                              const std::string &name,
                              const std::string &args_json) const;
@@ -70,8 +98,6 @@ class Tracer {
 #if RN_PERFETTO_WITH_SDK
   bool perfetto_initialized_ = false;
   std::unique_ptr<perfetto::TracingSession> tracing_session_;
-  uint64_t next_section_track_id_ = 1;
-  std::vector<uint64_t> active_section_track_ids_;
 #endif
 
 #if defined(__APPLE__)
